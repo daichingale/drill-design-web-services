@@ -3,18 +3,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { DrillEngine } from "@/lib/drill/engine";
-import type {
-  Drill,
-  WorldPos,
-  Member as DrillMember,
-} from "@/lib/drill/types";
+import type { Drill, WorldPos, Member as DrillMember } from "@/lib/drill/types";
 import type { UiSet } from "@/lib/drill/uiTypes";
 
 /** Sets + members から Drill を組み立てる */
 function buildDrillFromSets(
   sets: UiSet[],
   members: DrillMember[]
-): { drill: Drill; maxCount: number } {
+): { drill: Drill; countBySetId: Record<string, number> } {
   const drillMembers: DrillMember[] = members.map((m) => ({
     id: m.id,
     name: m.name,
@@ -23,35 +19,53 @@ function buildDrillFromSets(
   }));
 
   const positionsByMember: Record<string, Record<number, WorldPos>> = {};
+  const countBySetId: Record<string, number> = {};
 
   const sorted = [...sets].sort((a, b) => a.startCount - b.startCount);
 
-  let maxStartCount = 0;
+  let maxCount = 0;
+
+  // ★ 先頭セットが 0 カウントなら、エンジン用には「+1 シフト」して渡す
+  const baseOffset =
+    sorted.length && Math.round(sorted[0].startCount) === 0 ? 1 : 0;
 
   sorted.forEach((set) => {
-    const count = Math.max(0, Math.round(set.startCount));
-    if (count > maxStartCount) maxStartCount = count;
+    // UI 上の startCount を丸めて、さらに baseOffset を足す
+    const mappedCount = Math.max(0, Math.round(set.startCount) + baseOffset);
+    countBySetId[set.id] = mappedCount;
 
     drillMembers.forEach((m) => {
       const p = set.positions[m.id];
       if (!p) return;
       if (!positionsByMember[m.id]) positionsByMember[m.id] = {};
-      positionsByMember[m.id][count] = { x: p.x, y: p.y };
+      positionsByMember[m.id][mappedCount] = { x: p.x, y: p.y };
     });
-  });
 
-  const maxCount = maxStartCount + 16; // 最後のセットから16カウント分は最低動けるように
+    if (mappedCount > maxCount) maxCount = mappedCount;
+  });
 
   const drill: Drill = {
     id: "from-sets",
     title: "From UI Sets",
     bpm: 144,
-    maxCount,
+    maxCount: maxCount + 16,
     members: drillMembers,
     positionsByMember,
   };
 
-  return { drill, maxCount };
+  // デバッグ用ログ
+  console.log("=== buildDrillFromSets ===");
+  console.table(
+    sorted.map((s) => ({
+      id: s.id,
+      name: s.name,
+      uiStartCount: s.startCount,
+      mappedCount: countBySetId[s.id],
+    }))
+  );
+  console.log("drill.maxCount:", drill.maxCount);
+
+  return { drill, countBySetId };
 }
 
 type UseDrillPlaybackResult = {
@@ -59,8 +73,9 @@ type UseDrillPlaybackResult = {
   isPlaying: boolean;
   playbackPositions: Record<string, WorldPos>;
   handleScrub: (count: number) => void;
-  startPlay: (startCount: number, endCount: number) => void;
+  startPlayBySetId: (startSetId: string, endSetId: string) => void;
   stopPlay: () => void;
+  clearPlaybackView: () => void;
 };
 
 export function useDrillPlayback(
@@ -74,7 +89,7 @@ export function useDrillPlayback(
   >({});
 
   const engineRef = useRef<DrillEngine | null>(null);
-  const maxCountRef = useRef<number>(0);
+  const countBySetRef = useRef<Record<string, number>>({});
   const playRangeRef = useRef<{ startCount: number; endCount: number } | null>(
     null
   );
@@ -82,21 +97,14 @@ export function useDrillPlayback(
   // Drill 再構築
   useEffect(() => {
     if (!members.length || !sets.length) return;
-
-    const { drill, maxCount } = buildDrillFromSets(sets, members);
-    maxCountRef.current = maxCount;
+    const { drill, countBySetId } = buildDrillFromSets(sets, members);
+    countBySetRef.current = countBySetId;
 
     if (!engineRef.current) {
       engineRef.current = new DrillEngine(drill, 16);
     } else {
       engineRef.current.setDrill(drill);
     }
-
-    // スクラブされていなければ、とりあえず先頭に合わせておく
-    engineRef.current.setCount(0);
-    const positions = engineRef.current.getCurrentPositionsMap();
-    setPlaybackPositions(positions);
-    setCurrentCount(0);
   }, [sets, members]);
 
   // アニメーションループ
@@ -112,15 +120,23 @@ export function useDrillPlayback(
 
       if (engine && isPlaying) {
         engine.update(dt);
-
         const positions = engine.getCurrentPositionsMap();
         setPlaybackPositions(positions);
         setCurrentCount(engine.currentCount);
 
         const range = playRangeRef.current;
         if (range && engine.currentCount >= range.endCount) {
+          console.log(
+            "▶ reached end of range",
+            "currentCount=",
+            engine.currentCount,
+            "endCount=",
+            range.endCount
+          );
           engine.pause();
           setIsPlaying(false);
+          playRangeRef.current = null;
+          setPlaybackPositions({});
         }
       }
 
@@ -131,24 +147,41 @@ export function useDrillPlayback(
     return () => cancelAnimationFrame(frameId);
   }, [isPlaying]);
 
-  // スクラブ（ドラッグでカウント移動）
+  // スクラブ（ドラッグで動かす）
   const handleScrub = (count: number) => {
     const engine = engineRef.current;
     if (!engine) return;
 
-    const max = maxCountRef.current || engine["drill"]?.maxCount || 0;
-    const clamped = Math.min(Math.max(count, 0), max);
+    // sets から最大カウントを推定（engine 内部参照は使わない）
+    const sorted = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const baseOffset =
+      sorted.length && Math.round(sorted[0].startCount) === 0 ? 1 : 0;
 
+    const maxCountUi =
+      (sorted.length
+        ? Math.max(
+            ...sorted.map((s) => Math.round(s.startCount) + baseOffset)
+          )
+        : 0) + 16;
+
+    const clamped = Math.max(0, Math.min(count, maxCountUi));
     engine.setCount(clamped);
     const positions = engine.getCurrentPositionsMap();
-
     setIsPlaying(false);
-    setCurrentCount(engine.currentCount);
+    playRangeRef.current = null;
+    setCurrentCount(clamped);
     setPlaybackPositions(positions);
   };
 
-  // 再生開始 / 停止（ここが今回の本丸）
-  const startPlay = (startCount: number, endCount: number) => {
+  // 再生ビューだけ解除（編集に戻る用）
+  const clearPlaybackView = () => {
+    setPlaybackPositions({});
+    setIsPlaying(false);
+    playRangeRef.current = null;
+  };
+
+  // カウント指定で再生開始
+  const startPlayInternal = (startCount: number, endCount: number) => {
     const engine = engineRef.current;
     if (!engine) {
       alert("ドリルデータがまだ準備できていません");
@@ -159,30 +192,44 @@ export function useDrillPlayback(
       return;
     }
 
-    if (!Number.isFinite(startCount) || !Number.isFinite(endCount)) {
-      alert("開始 / 終了カウントの値が不正です");
+    if (startCount >= endCount) {
+      alert("開始カウントは終了カウントより前にしてください");
       return;
     }
 
-    const max = maxCountRef.current || endCount;
-    let s = Math.min(Math.max(startCount, 0), max);
-    let e = Math.min(Math.max(endCount, 0), max);
+    console.log("▶ startPlayInternal", { startCount, endCount });
 
-    if (e <= s) {
-      e = Math.min(s + 1, max); // 少なくとも1カウントは進む
-    }
-
-    console.log("startPlay:", { startCount: s, endCount: e });
-
-    playRangeRef.current = { startCount: s, endCount: e };
-
-    engine.setCount(s);
-    const positions = engine.getCurrentPositionsMap();
-    setPlaybackPositions(positions);
-    setCurrentCount(engine.currentCount);
-
+    playRangeRef.current = { startCount, endCount };
+    engine.setCount(startCount);
+    setCurrentCount(startCount);
     engine.play();
     setIsPlaying(true);
+  };
+
+  // Set ID から再生
+  const startPlayBySetId = (startSetId: string, endSetId: string) => {
+    if (!sets.length) return;
+
+    const map = countBySetRef.current;
+    const startCount = map[startSetId];
+    const endCount = map[endSetId];
+
+    console.log("▶ startPlayBySetId", {
+      startSetId,
+      endSetId,
+      startCount,
+      endCount,
+      map,
+    });
+
+    if (startCount === undefined || endCount === undefined) {
+      alert("セットのカウント情報が見つかりませんでした");
+      return;
+    }
+
+    const fixedEnd = Math.max(startCount + 1, endCount);
+
+    startPlayInternal(startCount, fixedEnd);
   };
 
   const stopPlay = () => {
@@ -190,6 +237,7 @@ export function useDrillPlayback(
     if (engine) engine.pause();
     playRangeRef.current = null;
     setIsPlaying(false);
+    setPlaybackPositions({});
   };
 
   return {
@@ -197,7 +245,8 @@ export function useDrillPlayback(
     isPlaying,
     playbackPositions,
     handleScrub,
-    startPlay,
+    startPlayBySetId,
     stopPlay,
+    clearPlaybackView,
   };
 }

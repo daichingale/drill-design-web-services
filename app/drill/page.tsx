@@ -24,7 +24,7 @@ type UiSet = {
   note: string;
 };
 
-// ★ スナップモード
+// スナップモード
 type SnapMode = "whole" | "half" | "free";
 
 export default function DrillPage() {
@@ -51,7 +51,6 @@ export default function DrillPage() {
     y: Math.min(Math.max(p.y, 0), FIELD_HEIGHT_M),
   });
 
-  // ★ useCallback で snapMode 依存の関数を「安定化」
   const clampAndSnap = useCallback(
     (p: WorldPos): WorldPos => {
       return clampPos(snapWorld(p));
@@ -59,7 +58,7 @@ export default function DrillPage() {
     [snapMode]
   );
 
-  // セット編集系（位置・ベジェ・note 等）
+  // セット編集系
   const {
     sets,
     currentSet,
@@ -88,15 +87,15 @@ export default function DrillPage() {
     isPlaying,
     playbackPositions,
     handleScrub,
-    startPlay,
+    startPlayBySetId,
     stopPlay,
+    clearPlaybackView,
   } = useDrillPlayback(sets as UiSet[], members as any);
 
-  // ★ 再生範囲（開始 / 終了セットの ID）
+  // 再生範囲（開始 / 終了セットの ID）
   const [playStartId, setPlayStartId] = useState<string>("");
   const [playEndId, setPlayEndId] = useState<string>("");
 
-  // ★ sets が変わったときに、存在しない ID になっていないか補正
   useEffect(() => {
     if (!sets.length) return;
 
@@ -109,23 +108,32 @@ export default function DrillPage() {
     );
   }, [sets]);
 
+  // 再生開始（Set ID ベース）
   const handleStartPlay = () => {
-  if (!sets.length) return;
+    if (!sets.length) return;
+    startPlayBySetId(playStartId, playEndId);
+  };
 
-  const startSet = sets.find((s) => s.id === playStartId);
-  const endSet = sets.find((s) => s.id === playEndId);
+  // ★ 再生ビューを抜けてから編集するためのラッパーたち
+  const handleToggleSelectWrapped = (id: string) => {
+    clearPlaybackView();
+    handleToggleSelect(id);
+  };
 
-  if (!startSet || !endSet) {
-    alert("開始セット・終了セットの指定が不正です");
-    return;
-  }
+  const handleMoveWrapped = (id: string, pos: WorldPos) => {
+    clearPlaybackView();
+    handleMove(id, pos);
+  };
 
-  const startCount = startSet.startCount;
-  const endCount = Math.max(startSet.startCount + 1, endSet.startCount);
+  const handleSelectBulkWrapped = (ids: string[]) => {
+    clearPlaybackView();
+    handleSelectBulk(ids);
+  };
 
-  startPlay(startCount, endCount);
-};
-
+  const nudgeSelectedWrapped = (dx: number, dy: number) => {
+    clearPlaybackView();
+    nudgeSelected(dx, dy);
+  };
 
   // ズーム（FieldCanvas 用）
   const [canvasScale, setCanvasScale] = useState(1);
@@ -146,7 +154,7 @@ export default function DrillPage() {
   const activeArc =
     arcBinding && arcBinding.setId === currentSetId ? arcBinding : null;
 
-  // ★ キーボード操作（Ctrl+A 全選択 ＋ 矢印キーで微調整）
+  // キーボード操作（Ctrl+A 全選択 ＋ 矢印キーで微調整）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -169,7 +177,7 @@ export default function DrillPage() {
         if (!members.length) return;
 
         const allIds = members.map((m) => m.id);
-        handleSelectBulk(allIds);
+        handleSelectBulkWrapped(allIds);
         return;
       }
 
@@ -204,7 +212,7 @@ export default function DrillPage() {
       if (dx === 0 && dy === 0) return;
 
       e.preventDefault();
-      nudgeSelected(dx, dy);
+      nudgeSelectedWrapped(dx, dy);
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -213,9 +221,9 @@ export default function DrillPage() {
     snapMode,
     selectedIds,
     isPlaying,
-    nudgeSelected,
     members,
-    handleSelectBulk,
+    handleSelectBulkWrapped,
+    nudgeSelectedWrapped,
   ]);
 
   return (
@@ -304,8 +312,9 @@ export default function DrillPage() {
                 }))}
                 currentSetId={currentSetId}
                 onChangeCurrentSet={(id) => {
+                  clearPlaybackView();
                   setCurrentSetId(id);
-                  handleSelectBulk([]); // Set 切り替え時に選択リセット
+                  handleSelectBulk([]);
                 }}
                 onAddSet={addSetTail}
                 onArrangeLineSelected={arrangeLineSelected}
@@ -323,14 +332,14 @@ export default function DrillPage() {
                   displayPositions={displayPositions}
                   currentSetPositions={currentSet.positions}
                   selectedIds={selectedIds}
-                  onToggleSelect={handleToggleSelect}
+                  onToggleSelect={handleToggleSelectWrapped}
                   isPlaying={isPlaying}
                   activeArc={activeArc}
-                  onMoveMember={handleMove}
+                  onMoveMember={handleMoveWrapped}
                   onUpdateArcPoint={handleUpdateArcPoint}
                   onMoveArcGroup={handleMoveArcGroup}
                   scale={canvasScale}
-                  onRectSelect={handleSelectBulk}
+                  onRectSelect={handleSelectBulkWrapped}
                   clampAndSnap={clampAndSnap}
                 />
               </div>
@@ -369,8 +378,7 @@ export default function DrillPage() {
             currentCount={currentCount}
             isPlaying={isPlaying}
             onScrub={handleScrub}
-            // onStartPlay={() => startPlay(playStartId, playEndId)}
-            onStartPlay={handleStartPlay}   // ← ここだけ
+            onStartPlay={handleStartPlay}
             onStopPlay={stopPlay}
             onAddSetAtCurrent={() => addSetAtCount(currentCount)}
           />
