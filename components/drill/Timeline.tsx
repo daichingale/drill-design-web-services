@@ -10,7 +10,6 @@ type TimelineSet = {
   endCount: number;
 };
 
-// DrillPage から受け取る props
 export type TimelineProps = {
   sets: TimelineSet[];
   playStartId: string;
@@ -25,7 +24,7 @@ export type TimelineProps = {
   onAddSetAtCurrent: () => void;
 };
 
-// ===== ヘッダ部分（ボタン + 現在カウント表示） ======================
+/* ==================== Header ==================== */
 
 type HeaderProps = {
   currentCount: number;
@@ -58,12 +57,12 @@ const TimelineHeader: React.FC<HeaderProps> = ({
         gap: 8,
       }}
     >
-      {/* 左：再生ボタン + ラベル（Pyware風） */}
+      {/* left: transport */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 6,
+          gap: 8,
         }}
       >
         <button
@@ -76,7 +75,7 @@ const TimelineHeader: React.FC<HeaderProps> = ({
             border: "1px solid #22c55e",
             backgroundColor: isPlaying ? "#064e3b" : "#047857",
             color: "#ecfdf5",
-            fontSize: 14,
+            fontSize: 13,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -85,10 +84,35 @@ const TimelineHeader: React.FC<HeaderProps> = ({
         >
           {isPlaying ? "■" : "▶"}
         </button>
-        <span style={{ fontWeight: 600, fontSize: 12 }}>Timeline</span>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#e5e7eb",
+            }}
+          >
+            Transport
+          </span>
+          <span
+            style={{
+              fontSize: 9,
+              color: "#9ca3af",
+            }}
+          >
+            Play / Stop & step through counts
+          </span>
+        </div>
       </div>
 
-      {/* 右：カウント / ステップ移動 / Set追加 */}
+      {/* right: counter & actions */}
       <div
         style={{
           display: "flex",
@@ -105,7 +129,7 @@ const TimelineHeader: React.FC<HeaderProps> = ({
             fontSize: 10,
             borderRadius: 4,
             border: "1px solid #4b5563",
-            background: "#111827",
+            background: "#020617",
             color: "#e5e7eb",
             cursor: "pointer",
           }}
@@ -120,7 +144,7 @@ const TimelineHeader: React.FC<HeaderProps> = ({
             fontSize: 10,
             borderRadius: 4,
             border: "1px solid #4b5563",
-            background: "#111827",
+            background: "#020617",
             color: "#e5e7eb",
             cursor: "pointer",
           }}
@@ -128,8 +152,22 @@ const TimelineHeader: React.FC<HeaderProps> = ({
           ▶
         </button>
 
-        <span style={{ opacity: 0.85 }}>
-          Count: {Math.round(currentCount)} / {totalCounts}
+        <span
+          style={{
+            opacity: 0.9,
+            fontSize: 10,
+            padding: "2px 8px",
+            borderRadius: 999,
+            background:
+              "linear-gradient(90deg, rgba(15,23,42,0.9), rgba(15,23,42,0.7))",
+            border: "1px solid rgba(148,163,184,0.5)",
+          }}
+        >
+          <span style={{ textTransform: "uppercase", fontSize: 9 }}>
+            Count
+          </span>{" "}
+          {Math.round(currentCount)}{" "}
+          <span style={{ opacity: 0.7 }}>/ {totalCounts}</span>
         </span>
 
         {onAddSetAtCurrent && (
@@ -145,9 +183,11 @@ const TimelineHeader: React.FC<HeaderProps> = ({
               background: "#052e16",
               color: "#bbf7d0",
               cursor: "pointer",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
             }}
           >
-            ＋ Set
+            + Set @ now
           </button>
         )}
       </div>
@@ -155,7 +195,7 @@ const TimelineHeader: React.FC<HeaderProps> = ({
   );
 };
 
-// ===== ルーラー（尺）部分 ==========================================
+/* ==================== Ruler ==================== */
 
 type RulerProps = {
   totalCounts: number;
@@ -164,10 +204,8 @@ type RulerProps = {
 
 const TimelineRuler: React.FC<RulerProps> = ({ totalCounts, pxPerCount }) => {
   const ticks: number[] = [];
-  const step = 4; // 4カウントごとに目盛り
-  for (let c = 0; c <= totalCounts; c += step) {
-    ticks.push(c);
-  }
+  const step = 4;
+  for (let c = 0; c <= totalCounts; c += step) ticks.push(c);
 
   return (
     <div
@@ -179,7 +217,7 @@ const TimelineRuler: React.FC<RulerProps> = ({ totalCounts, pxPerCount }) => {
         height: 16,
         borderBottom: "1px solid #374151",
         background:
-          "linear-gradient(to bottom, rgba(15,23,42,0.9), rgba(15,23,42,0.8))",
+          "linear-gradient(to bottom, rgba(15,23,42,0.95), rgba(15,23,42,0.85))",
       }}
     >
       {ticks.map((c) => {
@@ -195,7 +233,7 @@ const TimelineRuler: React.FC<RulerProps> = ({ totalCounts, pxPerCount }) => {
                 width: 1,
                 height: isMajor ? 8 : 5,
                 backgroundColor: isMajor ? "#e5e7eb" : "#6b7280",
-                opacity: isMajor ? 0.9 : 0.6,
+                opacity: isMajor ? 0.9 : 0.5,
               }}
             />
             {isMajor && c > 0 && (
@@ -204,7 +242,7 @@ const TimelineRuler: React.FC<RulerProps> = ({ totalCounts, pxPerCount }) => {
                   position: "absolute",
                   left: x + 2,
                   bottom: 1,
-                  fontSize: 9,
+                  fontSize: 8,
                   color: "#9ca3af",
                   whiteSpace: "nowrap",
                 }}
@@ -219,7 +257,7 @@ const TimelineRuler: React.FC<RulerProps> = ({ totalCounts, pxPerCount }) => {
   );
 };
 
-// ===== Set 帯（各 Set のブロック） ================================
+/* ==================== Segments ==================== */
 
 type SegmentsRowProps = {
   segments: TimelineSet[];
@@ -243,7 +281,6 @@ const TimelineSegmentsRow: React.FC<SegmentsRowProps> = ({
         top: 16,
         bottom: 0,
         display: "flex",
-        height: "auto",
       }}
     >
       {segments.map((s) => {
@@ -259,60 +296,78 @@ const TimelineSegmentsRow: React.FC<SegmentsRowProps> = ({
               height: "100%",
               borderRight: "1px solid #374151",
               position: "relative",
-              background: "#111827",
+              background:
+                "linear-gradient(to right, rgba(15,23,42,0.9), rgba(15,23,42,0.95))",
               boxSizing: "border-box",
             }}
           >
+            {/* Set name */}
             <span
               style={{
                 position: "absolute",
-                left: 4,
-                top: 2,
+                left: 6,
+                top: 3,
                 fontSize: 10,
                 whiteSpace: "nowrap",
                 color: "#e5e7eb",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
               }}
             >
               {s.name || s.id}
             </span>
+
+            {/* counts */}
             <span
               style={{
                 position: "absolute",
-                left: 4,
+                left: 6,
                 bottom: 2,
-                fontSize: 10,
+                fontSize: 9,
                 opacity: 0.8,
                 whiteSpace: "nowrap",
                 color: "#9ca3af",
               }}
             >
-              {s.startCount}〜{s.endCount}
+              {s.startCount} – {s.endCount}
             </span>
 
             {isStart && (
               <span
                 style={{
                   position: "absolute",
-                  right: 4,
-                  top: 2,
-                  fontSize: 9,
+                  right: 6,
+                  top: 3,
+                  fontSize: 8,
+                  padding: "1px 6px",
+                  borderRadius: 999,
+                  background: "rgba(34,197,94,0.16)",
+                  border: "1px solid rgba(34,197,94,0.7)",
                   color: "#6ee7b7",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
                 }}
               >
-                START
+                Start
               </span>
             )}
             {isEnd && (
               <span
                 style={{
                   position: "absolute",
-                  right: 4,
-                  bottom: 2,
-                  fontSize: 9,
-                  color: "#fb7185",
+                  right: 6,
+                  bottom: 3,
+                  fontSize: 8,
+                  padding: "1px 6px",
+                  borderRadius: 999,
+                  background: "rgba(248,113,113,0.16)",
+                  border: "1px solid rgba(248,113,113,0.7)",
+                  color: "#fecaca",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
                 }}
               >
-                END
+                End
               </span>
             )}
           </div>
@@ -322,7 +377,7 @@ const TimelineSegmentsRow: React.FC<SegmentsRowProps> = ({
   );
 };
 
-// ===== 再生範囲 & ヘッド ==========================================
+/* ==================== Range & Playhead ==================== */
 
 type RangeProps = {
   rangeStart: number;
@@ -346,7 +401,9 @@ const PlayRangeOverlay: React.FC<RangeProps> = ({
         bottom: 0,
         left,
         width,
-        background: "rgba(56, 189, 248, 0.20)",
+        background:
+          "linear-gradient(90deg, rgba(56,189,248,0.16), rgba(34,197,94,0.18))",
+        borderRadius: 3,
         pointerEvents: "none",
       }}
     />
@@ -368,9 +425,10 @@ const Playhead: React.FC<PlayheadProps> = ({ currentCount, pxPerCount }) => {
         top: 0,
         bottom: 0,
         width: 2,
-        background: "#f97373",
+        background: "#f9fafb",
         left: x,
         pointerEvents: "none",
+        boxShadow: "0 0 4px rgba(248,250,252,0.8)",
       }}
     >
       <div
@@ -382,14 +440,14 @@ const Playhead: React.FC<PlayheadProps> = ({ currentCount, pxPerCount }) => {
           height: 0,
           borderLeft: "5px solid transparent",
           borderRight: "5px solid transparent",
-          borderBottom: "7px solid #f97373",
+          borderBottom: "7px solid #f9fafb",
         }}
       />
     </div>
   );
 };
 
-// ===== タイムライン本体（旧 Timeline） ============================
+/* ==================== Base timeline ==================== */
 
 type BaseTimelineProps = {
   sets: TimelineSet[];
@@ -443,12 +501,16 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
     onScrub(clampCount(count));
   };
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+  const handleMouseDown = (
+    e: React.MouseEvent<HTMLDivElement, MouseEvent>
+  ) => {
     isDraggingRef.current = true;
     scrubAtClientX(e.clientX);
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+  const handleMouseMove = (
+    e: React.MouseEvent<HTMLDivElement, MouseEvent>
+  ) => {
     if (!isDraggingRef.current) return;
     scrubAtClientX(e.clientX);
   };
@@ -462,11 +524,13 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
       style={{
         width: 800,
         border: "1px solid #4b5563",
-        borderRadius: 8,
-        background: "#020617",
+        borderRadius: 10,
+        background:
+          "radial-gradient(circle at top, #020617, #020617 40%, #020617)",
         color: "#ffffff",
         fontSize: 12,
-        padding: "6px 8px",
+        padding: "6px 10px 8px",
+        boxShadow: "0 -4px 18px rgba(15,23,42,0.9)",
       }}
     >
       <TimelineHeader
@@ -495,11 +559,12 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
           onMouseLeave={stopDragging}
           style={{
             position: "relative",
-            height: 56,
+            height: 60,
             width: barWidth,
             overflow: "hidden",
-            borderRadius: 4,
-            background: "#020617",
+            borderRadius: 6,
+            background:
+              "linear-gradient(to bottom, #020617, #020617 40%, #020617)",
             cursor: "pointer",
             userSelect: "none",
           }}
@@ -523,13 +588,57 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
             currentCount={clampCount(currentCount)}
             pxPerCount={pxPerCount}
           />
+
+          {/* small info overlay in the bar */}
+          <div
+            style={{
+              position: "absolute",
+              right: 8,
+              top: 20,
+              padding: "3px 8px",
+              borderRadius: 999,
+              background: "rgba(15,23,42,0.9)",
+              border: "1px solid rgba(148,163,184,0.7)",
+              fontSize: 9,
+              color: "#e5e7eb",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <span style={{ textTransform: "uppercase", opacity: 0.7 }}>
+              Range
+            </span>
+            <span>
+              {startSeg?.name ?? "—"}{" "}
+              <span style={{ opacity: 0.6, fontSize: 8 }}>
+                ({rangeStart})
+              </span>
+            </span>
+            <span style={{ opacity: 0.5 }}>→</span>
+            <span>
+              {endSeg?.name ?? "—"}{" "}
+              <span style={{ opacity: 0.6, fontSize: 8 }}>({rangeEnd})</span>
+            </span>
+            <span
+              style={{
+                marginLeft: 6,
+                padding: "1px 6px",
+                borderRadius: 999,
+                background: "rgba(15,118,110,0.4)",
+                fontSize: 8,
+              }}
+            >
+              Now {Math.round(currentCount)}
+            </span>
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
-// ===== ラッパー（範囲セレクト + BaseTimeline） ======================
+/* ==================== Wrapper ==================== */
 
 export default function Timeline(props: TimelineProps) {
   const {
@@ -551,12 +660,14 @@ export default function Timeline(props: TimelineProps) {
 
   return (
     <div className="space-y-2">
-      {/* 再生範囲ヘッダ（Set3 → Set6 が見えるところ） */}
-      <div className="flex flex-wrap items-center gap-3 text-xs">
-        <div className="flex items-center gap-1">
-          <span className="text-slate-300">再生範囲:</span>
+      {/* Range header (上) */}
+      <div className="flex flex-wrap items-center gap-3 text-[11px]">
+        <div className="flex items-center gap-2">
+          <span className="text-slate-300 text-[11px] uppercase tracking-[0.12em]">
+            Range
+          </span>
           <select
-            className="rounded-md border border-slate-600 bg-slate-900 px-2 py-1"
+            className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px]"
             value={playStartId}
             onChange={(e) => onChangePlayStart(e.target.value)}
           >
@@ -566,9 +677,9 @@ export default function Timeline(props: TimelineProps) {
               </option>
             ))}
           </select>
-          <span>→</span>
+          <span className="text-slate-400 text-[10px]">→</span>
           <select
-            className="rounded-md border border-slate-600 bg-slate-900 px-2 py-1"
+            className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px]"
             value={playEndId}
             onChange={(e) => onChangePlayEnd(e.target.value)}
           >
@@ -581,25 +692,26 @@ export default function Timeline(props: TimelineProps) {
         </div>
 
         {startSet && endSet && (
-          <div className="text-[11px] text-slate-400">
-            ({startSet.name} {startSet.startCount}count → {endSet.name}{" "}
-            {endSet.startCount}count)
+          <div className="text-[10px] text-slate-400">
+            ({startSet.name} {startSet.startCount} → {endSet.name}{" "}
+            {endSet.startCount})
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-300">
-          <span>現在カウント: {Math.round(currentCount)}</span>
+        <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-300">
+          <span className="text-slate-400">
+            Now: {Math.round(currentCount)} count
+          </span>
           <button
             type="button"
             onClick={onAddSetAtCurrent}
-            className="rounded-md border border-slate-600 bg-slate-900 px-2 py-1 hover:bg-slate-800"
+            className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[10px] hover:bg-slate-900"
           >
-            ＋ 現在のカウントに Set 挿入
+            + Insert set @ current
           </button>
         </div>
       </div>
 
-      {/* 本体のタイムライン（Pyware風） */}
       <BaseTimeline
         sets={sets}
         playStartId={playStartId}

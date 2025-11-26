@@ -227,8 +227,9 @@ export default function DrillPage() {
   ]);
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
-      <main className="max-w-6xl mx-auto px-4 py-4 space-y-4">
+    <div className="relative min-h-screen bg-slate-900 text-slate-100">
+      {/* タイムラインと被らないように下に余白を足す */}
+      <main className="max-w-6xl mx-auto px-4 py-4 space-y-4 pb-32">
         {/* ヘッダ */}
         <header className="flex items-center justify-between border-b border-slate-800 pb-2">
           <div>
@@ -267,7 +268,7 @@ export default function DrillPage() {
             </div>
           </div>
 
-          {/* 中央 */}
+          {/* 中央（ズーム + Canvas） */}
           <div className="flex-1 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">
@@ -359,8 +360,23 @@ export default function DrillPage() {
           </div>
         </section>
 
-        {/* タイムライン */}
-        <section className="rounded-xl border border-slate-700 bg-slate-800/80 p-3">
+        {/* 3D プレビュー */}
+        <section className="rounded-xl border border-slate-700 bg-slate-800/80 p-3 w-[340px]">
+          <h2 className="text-xs font-semibold text-slate-300 mb-2">
+            3Dプレビュー
+          </h2>
+          <div className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
+            <Drill3DPreview
+              members={members as any}
+              positions={displayPositions}
+            />
+          </div>
+        </section>
+      </main>
+
+      {/* 🎹 画面下に固定されたタイムライン（DAW風） */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800 bg-slate-950/95 backdrop-blur px-4 py-2">
+        <div className="max-w-6xl mx-auto">
           <Timeline
             sets={sets.map((s, index) => ({
               id: s.id,
@@ -382,21 +398,8 @@ export default function DrillPage() {
             onStopPlay={stopPlay}
             onAddSetAtCurrent={() => addSetAtCount(currentCount)}
           />
-        </section>
-
-        {/* 3D プレビュー */}
-        <section className="rounded-xl border border-slate-700 bg-slate-800/80 p-3 w-[340px]">
-          <h2 className="text-xs font-semibold text-slate-300 mb-2">
-            3Dプレビュー
-          </h2>
-          <div className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
-            <Drill3DPreview
-              members={members as any}
-              positions={displayPositions}
-            />
-          </div>
-        </section>
-      </main>
+        </div>
+      </div>
     </div>
   );
 }
