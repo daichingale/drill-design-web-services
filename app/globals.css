@@ -1,6 +1,135 @@
 /* app/globals.css */
+
+/* ダーク寄り共通テーマ */
+:root {
+  color-scheme: dark;
+  --bg: #020617;
+  --bg-elevated: #020617;
+  --panel: #0b1120;
+  --panel-soft: #020617;
+  --border-subtle: #111827;
+  --border-strong: #1f2937;
+  --accent: #38bdf8;
+  --accent-soft: rgba(56, 189, 248, 0.12);
+  --text: #e5e7eb;
+  --text-muted: #9ca3af;
+  --danger: #f97373;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
   padding: 0;
-  font-family: sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+    background-color: #111827; /* ← slate-900：真っ黒よりDiscord寄り */
+    color: #e5e7eb;            /* slate-200 */
+  }
+
+/* 上部のリンクをナビっぽく */
+a {
+  color: #38bdf8;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+/* ページ全体の余白 */
+main,
+.app-root {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px 20px 32px;
+}
+
+/* 見出しを少し現代風に */
+h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  margin: 0 0 8px;
+}
+
+h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+/* ボタン / フォーム系を統一して“それっぽく” */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background-color: #020617;
+  border-radius: 0.5rem;
+  border: 1px solid #4b5563;
+  padding: 4px 8px;
+}
+
+button {
+  cursor: pointer;
+  background: #111827;
+  border-color: var(--border-strong);
+  transition: background 0.15s ease, border-color 0.15s ease,
+    transform 0.05s ease;
+}
+
+button:hover {
+  background: #1f2937;
+  border-color: #6b7280;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+input,
+select {
+  min-width: 90px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* ちょっとしたカード枠（NotePanel などに効く） */
+.note-panel,
+.side-panel,
+.timeline-panel {
+  background: var(--panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  padding: 10px 12px;
+}
+
+/* 小さいラベルテキスト */
+.label-muted {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* 一番上の「Drill Design Web」「メンバー管理」あたりを整えるなら */
+.top-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px 4px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.top-links a:first-child {
+  font-size: 1.1rem;
+  font-weight: 700;
 }
