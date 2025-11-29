@@ -46,7 +46,7 @@ const Drill3DPreview = forwardRef<Drill3DPreviewRef, Props>(
     }));
 
     return (
-      <div className="w-[420px] h-[260px] border rounded bg-black drill-3d-preview">
+      <div className="w-full h-full border-0 rounded bg-black drill-3d-preview">
         <Canvas camera={{ position: [0, 25, 30], fov: 40 }}>
         {/* ライト */}
         <ambientLight intensity={0.4} />

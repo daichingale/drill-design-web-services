@@ -95,17 +95,18 @@ export default function CommandPalette({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl bg-slate-800 border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
+        className="w-full max-w-2xl bg-slate-800/95 backdrop-blur border border-slate-700 rounded-lg shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 検索バー */}
-        <div className="p-4 border-b border-slate-700">
+        <div className="p-4 border-b border-slate-700 bg-slate-800/50">
           <div className="flex items-center gap-3">
             <svg
-              className="w-5 h-5 text-slate-400"
+              className="w-5 h-5 text-slate-400 flex-shrink-0"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
+              style={{ width: '1.25rem', height: '1.25rem' }}
             >
               <path
                 strokeLinecap="round"
@@ -123,9 +124,9 @@ export default function CommandPalette({
                 setSelectedIndex(0);
               }}
               placeholder="コマンドを検索... (例: 保存、エクスポート)"
-              className="flex-1 bg-transparent text-slate-100 placeholder-slate-500 outline-none text-lg"
+              className="flex-1 bg-slate-900/30 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder:text-slate-500 outline-none text-lg focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
             />
-            <kbd className="px-2 py-1 text-xs font-semibold text-slate-400 bg-slate-900 border border-slate-700 rounded">
+            <kbd className="px-2 py-1 text-xs font-semibold text-slate-400 bg-slate-900/60 border border-slate-700 rounded">
               ESC
             </kbd>
           </div>
@@ -153,8 +154,8 @@ export default function CommandPalette({
                         cmd.action();
                         onClose();
                       }}
-                      className={`w-full px-4 py-2 text-left flex items-center justify-between hover:bg-slate-700 transition-colors ${
-                        isSelected ? "bg-slate-700" : ""
+                      className={`w-full px-4 py-2.5 text-left flex items-center justify-between hover:bg-slate-700/50 transition-colors rounded mx-1 ${
+                        isSelected ? "bg-slate-700/50" : ""
                       }`}
                       onMouseEnter={() => setSelectedIndex(globalIndex)}
                     >

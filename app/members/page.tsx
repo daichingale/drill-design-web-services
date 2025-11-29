@@ -3,6 +3,7 @@
 
 import { ChangeEvent, useEffect } from "react";
 import { useMembers } from "@/context/MembersContext";
+import { useMenu } from "@/context/MenuContext";
 import { PART_LIST } from "../constants/parts";
 import {
   saveMembersToLocalStorage,
@@ -13,6 +14,7 @@ import {
 
 export default function MembersPage() {
   const { members, setMembers } = useMembers();
+  const { setMenuGroups } = useMenu();
 
   const addMember = () => {
     const newIndex = members.length + 1;
@@ -110,67 +112,88 @@ export default function MembersPage() {
     input.click();
   };
 
+  // メニューグループをレイアウトのメニューバーに登録
+  useEffect(() => {
+    const menuGroups = [
+      {
+        label: "ファイル",
+        items: [
+          {
+            label: "保存",
+            icon: "💾",
+            shortcut: "Ctrl+S",
+            action: handleSave,
+          },
+          {
+            label: "読み込み",
+            icon: "📂",
+            shortcut: "Ctrl+O",
+            action: handleLoad,
+          },
+          { divider: true },
+          {
+            label: "JSON形式でエクスポート",
+            icon: "📦",
+            action: handleExportJSON,
+          },
+          { divider: true },
+          {
+            label: "JSON形式からインポート",
+            icon: "📦",
+            action: handleImportJSON,
+          },
+        ],
+      },
+    ];
+
+    setMenuGroups(menuGroups);
+    return () => {
+      // ページから離れるときにメニューをクリア
+      setMenuGroups([]);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setMenuGroups, members]);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">メンバー管理</h1>
-        <div className="flex items-center gap-2 text-xs">
-          <button
-            onClick={handleSave}
-            className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-          >
-            保存
-          </button>
-          <button
-            onClick={handleLoad}
-            className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-          >
-            読み込み
-          </button>
-          <button
-            onClick={handleExportJSON}
-            className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-          >
-            エクスポート
-          </button>
-          <button
-            onClick={handleImportJSON}
-            className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-          >
-            インポート
-          </button>
+        <div>
+          <h1 className="text-3xl font-bold text-slate-100">メンバー管理</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            メンバーの情報を管理します。編集内容はドリルエディタに反映されます。
+          </p>
         </div>
       </div>
 
       <button
         onClick={addMember}
-        className="px-3 py-1 bg-blue-600 text-white rounded text-sm"
+        className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium transition-colors shadow-lg shadow-emerald-600/20"
       >
         ＋ メンバー追加
       </button>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm bg-white border rounded">
+      <div className="overflow-x-auto rounded-lg border border-slate-700 bg-slate-800/50">
+        <table className="min-w-full text-sm">
           <thead>
-            <tr className="border-b bg-gray-100">
-              <th className="px-3 py-2 text-left">ID</th>
-              <th className="px-3 py-2 text-left">名前</th>
-              <th className="px-3 py-2 text-left">楽器</th>
-              <th className="px-3 py-2 text-left">色</th>
-              <th className="px-3 py-2"></th>
+            <tr className="border-b border-slate-700 bg-slate-800/80">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">ID</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">名前</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">楽器</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">色</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-300 uppercase tracking-wider"></th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="divide-y divide-slate-700/50">
             {members.map((m) => (
-              <tr key={m.id} className="border-b">
-                <td className="px-3 py-2">{m.id}</td>
+              <tr key={m.id} className="hover:bg-slate-700/30 transition-colors">
+                <td className="px-4 py-3 text-slate-200 font-mono text-xs">{m.id}</td>
 
                 {/* 名前 */}
-                <td className="px-3 py-2">
+                <td className="px-4 py-3">
                   <input
                     type="text"
-                    className="border rounded px-2 py-1 w-full"
+                    className="w-full rounded bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 px-3 py-1.5 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-colors"
                     value={m.name}
                     onChange={(e) =>
                       updateField(m.id, "name", e.target.value)
@@ -178,17 +201,17 @@ export default function MembersPage() {
                   />
                 </td>
 
-                {/* ★★ パート：プルダウン化 ★★ */}
-                <td className="px-3 py-2">
+                {/* パート：プルダウン */}
+                <td className="px-4 py-3">
                   <select
                     value={m.part}
                     onChange={(e) =>
                       updateField(m.id, "part", e.target.value)
                     }
-                    className="border rounded px-2 py-1 w-full"
+                    className="w-full rounded bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-colors"
                   >
                     {PART_LIST.map((p) => (
-                      <option key={p} value={p}>
+                      <option key={p} value={p} className="bg-slate-800">
                         {p}
                       </option>
                     ))}
@@ -196,25 +219,26 @@ export default function MembersPage() {
                 </td>
 
                 {/* 色 */}
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
                     <input
                       type="color"
                       value={m.color ?? "#888888"}
                       onChange={(e) =>
                         updateField(m.id, "color", e.target.value)
                       }
+                      className="w-10 h-10 rounded border border-slate-600 bg-slate-700/30 cursor-pointer"
                     />
-                    <span className="text-xs text-gray-600">
+                    <span className="text-xs text-slate-400 font-mono">
                       {m.color}
                     </span>
                   </div>
                 </td>
 
                 {/* 削除 */}
-                <td className="px-3 py-2 text-right">
+                <td className="px-4 py-3 text-right">
                   <button
-                    className="text-red-600 text-xs"
+                    className="px-3 py-1.5 text-xs rounded bg-red-600/20 hover:bg-red-600/30 text-red-300 hover:text-red-200 transition-colors"
                     onClick={() => deleteMember(m.id)}
                   >
                     削除
@@ -225,8 +249,11 @@ export default function MembersPage() {
 
             {members.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-4 text-center text-gray-500">
-                  メンバーがいません。「メンバー追加」から登録してください。
+                <td colSpan={5} className="px-4 py-12 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-slate-400">メンバーがいません</p>
+                    <p className="text-xs text-slate-500">「メンバー追加」から登録してください</p>
+                  </div>
                 </td>
               </tr>
             )}
@@ -234,9 +261,11 @@ export default function MembersPage() {
         </table>
       </div>
 
-      <p className="text-xs text-gray-500">
-        ※ ここで編集した内容はそのままドリルエディタに反映されます。
-      </p>
+      <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-3">
+        <p className="text-xs text-slate-400">
+          💡 ここで編集した内容はそのままドリルエディタに反映されます。
+        </p>
+      </div>
     </div>
   );
 }

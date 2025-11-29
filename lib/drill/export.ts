@@ -5,6 +5,13 @@ import jsPDF from "jspdf";
 import type { UiSet } from "./uiTypes";
 import type { Member } from "@/context/MembersContext";
 
+// HTMLエスケープ関数
+function escapeHtml(text: string): string {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 export type ExportPDFOptions = {
   pageSize: "A4" | "A3" | "Letter";
   orientation: "portrait" | "landscape";
@@ -13,6 +20,7 @@ export type ExportPDFOptions = {
   showLabels: boolean;
   includeAllSets: boolean;
   setsPerPage: number;
+  selectedSetIds?: string[]; // 選択されたSetのIDリスト
 };
 
 export type PDFContentOptions = {
@@ -73,7 +81,10 @@ export async function exportSetsToPDF(
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = pdfOptions.margin || 10;
 
-    const setsToExport = pdfOptions.includeAllSets
+    // selectedSetIdsが指定されている場合はそれを使用、そうでなければ従来の動作
+    const setsToExport = pdfOptions.selectedSetIds
+      ? sets.filter((s) => pdfOptions.selectedSetIds!.includes(s.id))
+      : pdfOptions.includeAllSets
       ? sets
       : sets.filter((s) => s.id === currentSetId);
 
@@ -101,33 +112,11 @@ export async function exportSetsToPDF(
         currentY += 6;
       }
 
-      // ノート
-      if (contentOptions.includeNote !== false && set.note) {
-        pdf.setFontSize(10);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("Note:", margin, currentY + 5);
-        pdf.setFont("helvetica", "normal");
-        const noteLines = pdf.splitTextToSize(
-          set.note,
-          pageWidth - margin * 2
-        );
-        pdf.text(noteLines, margin, currentY + 8);
-        currentY += noteLines.length * 5 + 3;
-      }
-
-      // 動き方・指示
-      if (contentOptions.includeInstructions !== false && set.instructions) {
-        pdf.setFontSize(10);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("動き方・指示:", margin, currentY + 5);
-        pdf.setFont("helvetica", "normal");
-        const instructionLines = pdf.splitTextToSize(
-          set.instructions,
-          pageWidth - margin * 2
-        );
-        pdf.text(instructionLines, margin, currentY + 8);
-        currentY += instructionLines.length * 5 + 3;
-      }
+      // フィールド画像とテキストボックスを横並びに配置
+      const textBoxWidth = 60; // mm
+      const fieldMargin = margin;
+      const fieldMaxWidth = pageWidth - margin * 2 - textBoxWidth - 10; // 10mmは間隔
+      const fieldMaxHeight = pageHeight - currentY - margin - 10;
 
       // セットの画像を取得
       if (contentOptions.includeField !== false) {
@@ -138,32 +127,30 @@ export async function exportSetsToPDF(
             const img = new Image();
             img.onload = () => {
               try {
-                const maxWidth = pageWidth - margin * 2;
-                const maxHeight = pageHeight - currentY - margin - 10;
-
                 let imgWidth = img.width * 0.264583; // px to mm
                 let imgHeight = img.height * 0.264583;
 
                 const aspectRatio = imgWidth / imgHeight;
 
-                if (imgWidth > maxWidth) {
-                  imgWidth = maxWidth;
+                if (imgWidth > fieldMaxWidth) {
+                  imgWidth = fieldMaxWidth;
                   imgHeight = imgWidth / aspectRatio;
                 }
 
-                if (imgHeight > maxHeight) {
-                  imgHeight = maxHeight;
+                if (imgHeight > fieldMaxHeight) {
+                  imgHeight = fieldMaxHeight;
                   imgWidth = imgHeight * aspectRatio;
                 }
 
-                // 画像を中央揃えで配置
-                const imageX = margin + (maxWidth - imgWidth) / 2;
+                // 画像を左側に配置
+                const imageX = fieldMargin;
+                const imageY = currentY + 5;
 
                 pdf.addImage(
                   imageUrl,
                   "PNG",
                   imageX,
-                  currentY + 5,
+                  imageY,
                   imgWidth,
                   imgHeight
                 );
@@ -179,6 +166,69 @@ export async function exportSetsToPDF(
           });
         }
       }
+
+      // テキストボックスを右側に配置
+      const textBoxX = pageWidth - margin - textBoxWidth;
+      const textBoxY = currentY + 5;
+      const textBoxHeight = Math.min(80, pageHeight - textBoxY - margin - 10); // 最大80mm
+
+      // テキストボックスを3分割（Move、Note、次の動き）
+      const boxHeight = textBoxHeight / 3 - 1;
+      const gap = 1;
+
+      // Move（動き方・指示）テキストボックス
+      if (contentOptions.includeInstructions !== false) {
+        pdf.setLineWidth(0.5);
+        pdf.rect(textBoxX, textBoxY, textBoxWidth, boxHeight);
+
+        pdf.setFontSize(10);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("Move（動き方・指示）", textBoxX + 2, textBoxY + 5);
+
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        const instructionLines = pdf.splitTextToSize(
+          set.instructions || "（未記入）",
+          textBoxWidth - 4
+        );
+        pdf.text(instructionLines, textBoxX + 2, textBoxY + 10);
+      }
+
+      // Note（メモ）テキストボックス
+      if (contentOptions.includeNote !== false) {
+        const noteBoxY = textBoxY + boxHeight + gap;
+        pdf.setLineWidth(0.5);
+        pdf.rect(textBoxX, noteBoxY, textBoxWidth, boxHeight);
+
+        pdf.setFontSize(10);
+        pdf.setFont("helvetica", "bold");
+        pdf.text("Note（メモ）", textBoxX + 2, noteBoxY + 5);
+
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8);
+        const noteLines = pdf.splitTextToSize(
+          set.note || "（未記入）",
+          textBoxWidth - 4
+        );
+        pdf.text(noteLines, textBoxX + 2, noteBoxY + 10);
+      }
+
+      // 次の動きテキストボックス
+      const nextMoveBoxY = textBoxY + (boxHeight + gap) * 2;
+      pdf.setLineWidth(0.5);
+      pdf.rect(textBoxX, nextMoveBoxY, textBoxWidth, boxHeight);
+
+      pdf.setFontSize(10);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("次の動き", textBoxX + 2, nextMoveBoxY + 5);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8);
+      const nextMoveLines = pdf.splitTextToSize(
+        set.nextMove || "（未記入）",
+        textBoxWidth - 4
+      );
+      pdf.text(nextMoveLines, textBoxX + 2, nextMoveBoxY + 10);
     }
 
     // PDFをダウンロード
@@ -194,11 +244,12 @@ export async function exportSetsToPDF(
 }
 
 /**
- * 現在のセットを印刷
+ * 選択されたセットを印刷
  */
-export function printCurrentSet(
-  canvasElement: HTMLElement,
-  set: UiSet,
+export function printSelectedSets(
+  sets: UiSet[],
+  selectedSetIds: string[],
+  getSetCanvas: (setId: string) => HTMLElement | null,
   options: {
     includeSetName?: boolean;
     includeCount?: boolean;
@@ -213,13 +264,48 @@ export function printCurrentSet(
     includeField: true,
   }
 ): void {
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    alert("ポップアップがブロックされています。印刷を許可してください。");
+  if (selectedSetIds.length === 0) {
+    alert("印刷するSetを選択してください");
     return;
   }
 
-  // セット情報のHTMLを生成
+  const setsToPrint = sets.filter(s => selectedSetIds.includes(s.id));
+  
+  // 複数Setの場合は各Setごとに印刷ウィンドウを開く
+  setsToPrint.forEach((set, index) => {
+    const canvasElement = getSetCanvas(set.id);
+    if (!canvasElement && options.includeField !== false) {
+      console.warn(`Set ${set.id} のキャンバスが見つかりません`);
+    }
+    
+    printSingleSet(canvasElement, set, options, index === 0);
+  });
+}
+
+/**
+ * 単一のセットを印刷
+ */
+function printSingleSet(
+  canvasElement: HTMLElement | null,
+  set: UiSet,
+  options: {
+    includeSetName?: boolean;
+    includeCount?: boolean;
+    includeNote?: boolean;
+    includeInstructions?: boolean;
+    includeField?: boolean;
+  },
+  isFirst: boolean = true
+): void {
+  const printWindow = window.open("", isFirst ? "_blank" : "_blank");
+  if (!printWindow) {
+    if (isFirst) {
+      alert("ポップアップがブロックされています。印刷を許可してください。");
+    }
+    return;
+  }
+
+  // セット情報のHTMLを生成（タイトルとカウントのみ）
   let headerHTML = "";
 
   if (options.includeSetName !== false) {
@@ -228,20 +314,6 @@ export function printCurrentSet(
 
   if (options.includeCount !== false) {
     headerHTML += `<div class="print-count">Start Count: ${set.startCount}</div>`;
-  }
-
-  if (options.includeNote !== false && set.note) {
-    headerHTML += `<div class="print-section">
-      <div class="print-label">Note:</div>
-      <div class="print-note">${set.note.replace(/\n/g, "<br>")}</div>
-    </div>`;
-  }
-
-  if (options.includeInstructions !== false && set.instructions) {
-    headerHTML += `<div class="print-section">
-      <div class="print-label">動き方・指示:</div>
-      <div class="print-instructions">${set.instructions.replace(/\n/g, "<br>")}</div>
-    </div>`;
   }
 
   const html = `
@@ -280,27 +352,16 @@ export function printCurrentSet(
             color: #666;
             margin-bottom: 10px;
           }
-          .print-section {
-            margin-bottom: 12px;
+          .print-content-wrapper {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
           }
-          .print-label {
-            font-size: 12px;
-            font-weight: bold;
-            color: #000;
-            margin-bottom: 4px;
-          }
-          .print-note,
-          .print-instructions {
-            font-size: 12px;
-            color: #333;
-            line-height: 1.6;
-            white-space: pre-wrap;
-          }
-          .print-canvas {
+          .print-canvas-container {
+            flex: 1;
             display: flex;
             justify-content: center;
-            align-items: center;
-            margin-top: 10px;
+            align-items: flex-start;
           }
           .print-canvas img,
           .print-canvas canvas {
@@ -308,15 +369,66 @@ export function printCurrentSet(
             height: auto;
             border: 1px solid #ccc;
           }
+          .print-text-boxes {
+            width: 250px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+          }
+          .print-text-box {
+            border: 2px solid #000;
+            padding: 12px;
+            background: white;
+            min-height: 150px;
+          }
+          .print-text-box-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #000;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #000;
+            padding-bottom: 4px;
+          }
+          .print-text-box-content {
+            font-size: 11px;
+            color: #333;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+          }
+          .print-text-box-content:empty::before {
+            content: "（未記入）";
+            color: #999;
+            font-style: italic;
+          }
         </style>
       </head>
       <body>
         <div class="print-header">
           ${headerHTML}
         </div>
-        ${options.includeField !== false ? `<div class="print-canvas">
-          ${canvasElement.outerHTML}
-        </div>` : ""}
+        <div class="print-content-wrapper">
+          ${options.includeField !== false && canvasElement ? `<div class="print-canvas-container">
+            <div class="print-canvas">
+              ${canvasElement.outerHTML}
+            </div>
+          </div>` : ""}
+          <div class="print-text-boxes">
+            ${options.includeInstructions !== false ? `<div class="print-text-box">
+              <div class="print-text-box-label">Move（動き方・指示）</div>
+              <div class="print-text-box-content">${set.instructions ? escapeHtml(set.instructions).replace(/\n/g, "<br>") : "（未記入）"}</div>
+            </div>` : ""}
+            ${options.includeNote !== false ? `<div class="print-text-box">
+              <div class="print-text-box-label">Note（メモ）</div>
+              <div class="print-text-box-content">${set.note ? escapeHtml(set.note).replace(/\n/g, "<br>") : "（未記入）"}</div>
+            </div>` : ""}
+            <div class="print-text-box">
+              <div class="print-text-box-label">次の動き</div>
+              <div class="print-text-box-content">${set.nextMove ? escapeHtml(set.nextMove).replace(/\n/g, "<br>") : "（未記入）"}</div>
+            </div>
+          </div>
+        </div>
       </body>
     </html>
   `;
@@ -327,7 +439,30 @@ export function printCurrentSet(
   printWindow.onload = () => {
     setTimeout(() => {
       printWindow.print();
-    }, 500);
+    }, isFirst ? 500 : 1000); // 複数Setの場合は少し遅延
   };
+}
+
+/**
+ * 現在のセットを印刷（後方互換性のため）
+ */
+export function printCurrentSet(
+  canvasElement: HTMLElement,
+  set: UiSet,
+  options: {
+    includeSetName?: boolean;
+    includeCount?: boolean;
+    includeNote?: boolean;
+    includeInstructions?: boolean;
+    includeField?: boolean;
+  } = {
+    includeSetName: true,
+    includeCount: true,
+    includeNote: true,
+    includeInstructions: true,
+    includeField: true,
+  }
+): void {
+  printSingleSet(canvasElement, set, options, true);
 }
 

@@ -28,7 +28,7 @@ const DEFAULT_SETTINGS: Settings = {
   showGrid: true,
   gridInterval: 1, // 1ステップごと
   displayUnit: "meter",
-  backgroundColor: "#0a6f2b", // 緑色（芝生）
+  backgroundColor: "#f5f7fa", // 薄いグレー（モノクロコピーでも見えやすく、メンバー視認性も良い）
   backgroundTransparent: false,
 };
 

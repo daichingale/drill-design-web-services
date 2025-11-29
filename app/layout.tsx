@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { MembersProvider } from "@/context/MembersContext";
 import { SettingsProvider } from "@/context/SettingsContext";
+import { MenuProvider } from "@/context/MenuContext";
+import MenuBar from "@/components/MenuBar";
 
 export const metadata: Metadata = {
   title: "Drill Design Web Services",
@@ -18,37 +20,33 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* 全体で共有するコンテキスト */}
         <SettingsProvider>
           <MembersProvider>
-          {/* 上部ヘッダー */}
-          <header className="border-b border-slate-800 bg-slate-950/95 backdrop-blur">
-            <div className="mx-auto max-w-6xl flex items-center justify-between px-4 py-3">
-              <Link href="/" className="font-semibold text-base tracking-tight">
-                Drill Design Web
-              </Link>
-              <nav className="flex gap-4 text-xs text-slate-300">
-                <Link
-                  href="/drill"
-                  className="hover:text-emerald-300 transition-colors"
-                >
-                  ドリルエディタ
-                </Link>
-                <Link
-                  href="/members"
-                  className="hover:text-emerald-300 transition-colors"
-                >
-                  メンバー管理
-                </Link>
-                <Link
-                  href="/settings"
-                  className="hover:text-emerald-300 transition-colors"
-                >
-                  設定
-                </Link>
-              </nav>
-            </div>
-          </header>
+            <MenuProvider>
+              {/* メニューバー（固定、最上部） */}
+              <div className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+                <div className="mx-auto max-w-full">
+                  {/* メニューバー */}
+                  <div className="flex items-center justify-between px-4 py-1.5 border-b border-slate-800 bg-slate-900/50">
+                    <div className="flex items-center gap-4">
+                      <Link 
+                        href="/" 
+                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-700/30 transition-colors group"
+                      >
+                        <div className="w-6 h-6 rounded bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-slate-950 font-bold text-xs">
+                          DD
+                        </div>
+                        <span className="font-semibold text-sm tracking-tight text-slate-200 group-hover:text-slate-100 transition-colors">
+                          Drill Design Web
+                        </span>
+                      </Link>
+                      <MenuBar />
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-          {/* 各ページ本体 */}
-          <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+              {/* 各ページ本体 */}
+              <main className="mx-auto max-w-[98vw] px-2 py-4">{children}</main>
+            </MenuProvider>
           </MembersProvider>
         </SettingsProvider>
       </body>

@@ -36,12 +36,21 @@ export class DrillEngine {
     this.currentCount = Math.max(0, Math.min(count, this.drill.maxCount));
   }
 
+  /** 再生速度を設定（1秒あたりのカウント数） */
+  setCountsPerSecond(countsPerSecond: number) {
+    this.countsPerSecond = countsPerSecond;
+  }
+
   play() {
     this.playing = true;
   }
 
   pause() {
     this.playing = false;
+  }
+
+  isPlaying(): boolean {
+    return this.playing;
   }
 
   /** 毎フレーム呼ぶ。dt は秒単位。*/

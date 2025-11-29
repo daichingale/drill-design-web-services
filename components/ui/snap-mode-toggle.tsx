@@ -11,8 +11,8 @@ type Props = {
 };
 
 const SNAP_OPTIONS: { value: SnapMode; label: string }[] = [
-  { value: "whole", label: "ホール" },
-  { value: "half", label: "ハーフ" },
+  { value: "whole", label: "1マス" },
+  { value: "half", label: "0.5マス" },
   { value: "free", label: "自由" },
 ];
 
@@ -22,7 +22,7 @@ export function SnapModeToggle({ value, onChange }: Props) {
       <span className="text-slate-400 mr-1">スナップ:</span>
 
       {/* Discord 風トグルグループ */}
-      <div className="inline-flex items-center rounded-xl bg-slate-900 border border-slate-700 p-0.5 shadow-lg">
+      <div className="inline-flex items-center rounded-lg bg-slate-700/30 border border-slate-600 p-0.5">
         {SNAP_OPTIONS.map((opt) => {
           const active = opt.value === value;
 
@@ -33,12 +33,12 @@ export function SnapModeToggle({ value, onChange }: Props) {
               aria-pressed={active}
               onClick={() => onChange(opt.value)}
               className={
-                "px-3 py-1 text-[11px] rounded-lg border transition " +
+                "px-3 py-1 text-[11px] rounded transition-colors " +
                 (active
-                  ? // ★ 選択中（めっちゃ分かりやすく）
-                    "bg-indigo-500 border-indigo-300 text-white shadow-inner translate-y-[1px]"
+                  ? // ★ 選択中
+                    "bg-emerald-600/80 text-white shadow-inner"
                   : // ★ 非選択
-                    "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700")
+                    "bg-transparent text-slate-300 hover:bg-slate-700/30 hover:text-slate-100")
               }
             >
               {opt.label}

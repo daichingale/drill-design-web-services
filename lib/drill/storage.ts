@@ -8,12 +8,19 @@ import type { Member } from "./types";
 const STORAGE_KEY_DRILL = "drill-design-sets";
 const STORAGE_KEY_MEMBERS = "drill-design-members";
 const STORAGE_KEY_VERSION = "drill-design-version";
+const STORAGE_KEY_DRILL_METADATA = "drill-design-metadata";
 
 const CURRENT_VERSION = "1.0.0";
 
 export type SavedDrillData = {
   version: string;
   sets: UiSet[];
+  savedAt: string;
+};
+
+export type DrillMetadata = {
+  title: string;
+  dataName: string;
   savedAt: string;
 };
 
@@ -59,6 +66,7 @@ export function loadDrillFromLocalStorage(): UiSet[] | null {
     const sets = (data.sets || []).map((set) => ({
       ...set,
       instructions: set.instructions || "",
+      nextMove: set.nextMove || "",
     }));
 
     return sets;
@@ -73,6 +81,14 @@ export function clearDrillFromLocalStorage(): void {
     localStorage.removeItem(STORAGE_KEY_DRILL);
   } catch (error) {
     console.error("Failed to clear drill data:", error);
+  }
+}
+
+export function clearMembersFromLocalStorage(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY_MEMBERS);
+  } catch (error) {
+    console.error("Failed to clear members data:", error);
   }
 }
 
@@ -143,6 +159,7 @@ export function importDrillFromJSON(jsonString: string): UiSet[] | null {
     const sets = (data.sets || []).map((set) => ({
       ...set,
       instructions: set.instructions || "",
+      nextMove: set.nextMove || "",
     }));
 
     return sets;
@@ -234,6 +251,7 @@ export function importDrillFromYAML(yamlString: string): UiSet[] | null {
     const sets = (data.sets || []).map((set) => ({
       ...set,
       instructions: set.instructions || "",
+      nextMove: set.nextMove || "",
     }));
 
     return sets;
@@ -321,6 +339,44 @@ export function autoSaveMembers(
     saveMembersToLocalStorage(members);
     console.log("Auto-saved members data");
   }, delayMs);
+}
+
+// ===== ドリルメタデータ（タイトル・データ名）の保存・読み込み =====
+
+export function saveDrillMetadata(metadata: { title: string; dataName: string }): boolean {
+  try {
+    const data: DrillMetadata = {
+      title: metadata.title,
+      dataName: metadata.dataName,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(STORAGE_KEY_DRILL_METADATA, JSON.stringify(data));
+    return true;
+  } catch (error) {
+    console.error("Failed to save drill metadata:", error);
+    return false;
+  }
+}
+
+export function loadDrillMetadata(): DrillMetadata | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_DRILL_METADATA);
+    if (!stored) return null;
+
+    const data: DrillMetadata = JSON.parse(stored);
+    return data;
+  } catch (error) {
+    console.error("Failed to load drill metadata:", error);
+    return null;
+  }
+}
+
+export function clearDrillMetadata(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY_DRILL_METADATA);
+  } catch (error) {
+    console.error("Failed to clear drill metadata:", error);
+  }
 }
 
 

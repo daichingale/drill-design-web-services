@@ -34,12 +34,28 @@ function buildDrillFromSets(
     const mappedCount = Math.max(0, Math.round(set.startCount) + baseOffset);
     countBySetId[set.id] = mappedCount;
 
+    // startCountでの位置を追加（後方互換性のため）
     drillMembers.forEach((m) => {
       const p = set.positions[m.id];
       if (!p) return;
       if (!positionsByMember[m.id]) positionsByMember[m.id] = {};
       positionsByMember[m.id][mappedCount] = { x: p.x, y: p.y };
     });
+
+    // positionsByCountからも位置を追加
+    if (set.positionsByCount) {
+      Object.entries(set.positionsByCount).forEach(([countStr, memberPositions]) => {
+        const count = Number(countStr);
+        const mappedCountForPosition = Math.max(0, Math.round(count) + baseOffset);
+        
+        Object.entries(memberPositions).forEach(([memberId, pos]) => {
+          if (!positionsByMember[memberId]) positionsByMember[memberId] = {};
+          positionsByMember[memberId][mappedCountForPosition] = { x: pos.x, y: pos.y };
+        });
+        
+        if (mappedCountForPosition > maxCount) maxCount = mappedCountForPosition;
+      });
+    }
 
     if (mappedCount > maxCount) maxCount = mappedCount;
   });
@@ -83,7 +99,8 @@ type UseDrillPlaybackResult = {
 
 export function useDrillPlayback(
   sets: UiSet[],
-  members: DrillMember[]
+  members: DrillMember[],
+  playbackBPM: number = 120 // デフォルトはBPM=120（1秒で2カウント）
 ): UseDrillPlaybackResult {
   const [currentCount, setCurrentCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -99,18 +116,34 @@ export function useDrillPlayback(
   const isRecordingRef = useRef(false);
   const musicSyncModeRef = useRef(false); // 音楽同期モード
 
+  // BPMからcountsPerSecondを計算（1拍 = 2カウントと仮定）
+  // BPM = 120の場合: 120拍/分 = 2拍/秒 = 4カウント/秒
+  // ただし、一般的には1拍 = 1カウントとして扱うことが多いので、BPM = 120の場合: 120拍/分 = 2拍/秒 = 2カウント/秒
+  const countsPerSecond = playbackBPM / 60; // 1秒あたりの拍数 = 1秒あたりのカウント数（1拍 = 1カウント）
+
   // Drill 再構築
   useEffect(() => {
     if (!members.length || !sets.length) return;
     const { drill, countBySetId } = buildDrillFromSets(sets, members);
     countBySetRef.current = countBySetId;
 
-    if (!engineRef.current) {
-      engineRef.current = new DrillEngine(drill, 16);
-    } else {
-      engineRef.current.setDrill(drill);
+    // 既存のエンジンがある場合、現在のカウントを保存
+    const currentCount = engineRef.current?.currentCount ?? 0;
+    const wasPlaying = engineRef.current?.isPlaying() ?? false;
+
+    // BPMに基づいてcountsPerSecondを設定
+    engineRef.current = new DrillEngine(drill, countsPerSecond);
+    
+    // 既存のカウントを復元
+    if (currentCount > 0) {
+      engineRef.current.setCount(currentCount);
     }
-  }, [sets, members]);
+    
+    // 再生中だった場合は再開
+    if (wasPlaying) {
+      engineRef.current.play();
+    }
+  }, [sets, members, countsPerSecond]);
 
   // アニメーションループ
   useEffect(() => {

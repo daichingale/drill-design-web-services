@@ -48,9 +48,12 @@ type UseDrillSetsResult = {
 
   handleChangeNote: (value: string) => void;
   handleChangeInstructions: (value: string) => void;
+  handleChangeNextMove: (value: string) => void;
   handleChangeSetStartCount: (id: string, value: number) => void;
 
   arrangeLineSelected: () => void;
+  arrangeLineBySelectionOrder: () => void; // 選択順に整列
+  reorderSelection: (direction: 'up' | 'down') => void; // 選択順を入れ替え
 
   // 形状作成
   arrangeCircle: (center: WorldPos, radius: number) => void;
@@ -89,26 +92,31 @@ export function useDrillSets(
     x: Math.min(Math.max(p.x, 0), fieldWidth),
     y: Math.min(Math.max(p.y, 0), fieldHeight),
   }), [fieldWidth, fieldHeight]);
+  const initialSet1Id = `set-init-1-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const initialSet2Id = `set-init-2-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
   const [sets, setSets] = useState<UiSet[]>([
     {
-      id: "Set1",
+      id: initialSet1Id,
       name: "Set 1",
       startCount: 0,
       positions: {},
       note: "",
       instructions: "",
+      nextMove: "",
     },
     {
-      id: "Set2",
+      id: initialSet2Id,
       name: "Set 2",
       startCount: 16,
       positions: {},
       note: "",
       instructions: "",
+      nextMove: "",
     },
   ]);
 
-  const [currentSetId, setCurrentSetId] = useState("Set1");
+  const [currentSetId, setCurrentSetId] = useState(initialSet1Id);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [arcBinding, setArcBinding] = useState<ArcBinding | null>(null);
 
@@ -237,8 +245,8 @@ const handleMove = (id: string, newPosRaw: WorldPos) => {
     let createdId = "";
 
     setSets((prev) => {
-      const newIndex = prev.length + 1;
-      const newId = `Set${newIndex}`;
+      // 一意のIDを生成（タイムスタンプ + ランダム）
+      const newId = `set-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       createdId = newId;
 
       const duplicated = structuredClone(currentSet.positions);
@@ -280,7 +288,8 @@ const handleMove = (id: string, newPosRaw: WorldPos) => {
         return prev; // 変更なし
       }
 
-      const newId = `Set${prev.length + 1}`;
+      // 一意のIDを生成（タイムスタンプ + ランダム）
+      const newId = `set-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       createdId = newId;
 
       // そのカウント以前で一番近い Set をベースにコピー
@@ -444,6 +453,14 @@ const handleSelectBulk = (ids: string[]) => {
     );
   };
 
+  const handleChangeNextMove = (value: string) => {
+    setSets((prev) =>
+      prev.map((set) =>
+        set.id === currentSetId ? { ...set, nextMove: value } : set
+      )
+    );
+  };
+
   // Set の startCount 編集（重複は NG）
   const handleChangeSetStartCount = (id: string, value: number) => {
     const rounded = Math.max(0, Math.round(value));
@@ -487,8 +504,90 @@ const handleSelectBulk = (ids: string[]) => {
         if (set.id !== currentSetId) return set;
         const newPositions = { ...set.positions };
         targetIds.forEach((id, idx) => {
-          newPositions[id] = { x: startX + step * idx, y };
+          newPositions[id] = clampAndSnap({ x: startX + step * idx, y });
         });
+        return { ...set, positions: newPositions };
+      })
+    );
+  };
+
+  // 選択順に整列
+  const arrangeLineBySelectionOrder = () => {
+    if (selectedIds.length === 0) {
+      alert("メンバーを選択してください");
+      return;
+    }
+
+    const startX = 5;
+    const endX = fieldWidth - 5;
+    const y = fieldHeight / 2;
+
+    const params: Record<string, number> = {};
+    const n = selectedIds.length;
+    selectedIds.forEach((id, idx) => {
+      params[id] = n > 1 ? idx / (n - 1) : 0;
+    });
+
+    setSets((prev) =>
+      prev.map((set) => {
+        if (set.id !== currentSetId) return set;
+
+        const newPositions: Record<string, WorldPos> = { ...set.positions };
+
+        selectedIds.forEach((id) => {
+          const t = params[id];
+          const x = startX + (endX - startX) * t;
+          newPositions[id] = clampAndSnap({ x, y });
+        });
+
+        return { ...set, positions: newPositions };
+      })
+    );
+  };
+
+  // 選択順を入れ替え（位置も瞬時に入れ替える）
+  const reorderSelection = (direction: 'up' | 'down') => {
+    if (selectedIds.length < 2) {
+      alert("2つ以上のメンバーを選択してください");
+      return;
+    }
+
+    const newSelectedIds = [...selectedIds];
+    
+    if (direction === 'up') {
+      // 最初の要素を最後に移動
+      const first = newSelectedIds.shift();
+      if (first) newSelectedIds.push(first);
+    } else {
+      // 最後の要素を最初に移動
+      const last = newSelectedIds.pop();
+      if (last) newSelectedIds.unshift(last);
+    }
+
+    // 選択順を更新
+    setSelectedIds(newSelectedIds);
+
+    // 位置も瞬時に入れ替え
+    setSets((prev) =>
+      prev.map((set) => {
+        if (set.id !== currentSetId) return set;
+
+        const newPositions: Record<string, WorldPos> = { ...set.positions };
+        
+        // 現在の位置を取得
+        const currentPositions = selectedIds.map(id => ({
+          id,
+          pos: set.positions[id] || { x: 0, y: 0 }
+        }));
+
+        // 新しい順序で位置を再配置
+        newSelectedIds.forEach((id, idx) => {
+          const oldIdx = selectedIds.indexOf(id);
+          if (oldIdx !== -1 && currentPositions[oldIdx]) {
+            newPositions[id] = currentPositions[oldIdx].pos;
+          }
+        });
+
         return { ...set, positions: newPositions };
       })
     );
@@ -876,9 +975,12 @@ const handleSelectBulk = (ids: string[]) => {
     handleMove,
     handleChangeNote,
     handleChangeInstructions,
+    handleChangeNextMove,
     handleChangeSetStartCount,
 
     arrangeLineSelected,
+    arrangeLineBySelectionOrder,
+    reorderSelection,
 
     // 形状作成
     arrangeCircle,

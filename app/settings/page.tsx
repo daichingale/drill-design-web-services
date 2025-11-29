@@ -2,10 +2,12 @@
 "use client";
 
 import { useSettings } from "@/context/SettingsContext";
-import { useState } from "react";
+import { useMenu } from "@/context/MenuContext";
+import { useState, useEffect } from "react";
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettings();
+  const { setMenuGroups } = useMenu();
   const [localFieldWidth, setLocalFieldWidth] = useState(settings.fieldWidth);
   const [localFieldHeight, setLocalFieldHeight] = useState(settings.fieldHeight);
   const [localGridInterval, setLocalGridInterval] = useState(settings.gridInterval);
@@ -32,6 +34,34 @@ export default function SettingsPage() {
       backgroundColor: localBackgroundColor,
     });
   };
+
+  // メニューグループをレイアウトのメニューバーに登録
+  useEffect(() => {
+    const menuGroups = [
+      {
+        label: "ファイル",
+        items: [
+          {
+            label: "設定をリセット",
+            icon: "🔄",
+            action: () => {
+              resetSettings();
+              setLocalFieldWidth(50);
+              setLocalFieldHeight(40);
+              setLocalGridInterval(1);
+              setLocalBackgroundColor("#0a6f2b");
+            },
+          },
+        ],
+      },
+    ];
+
+    setMenuGroups(menuGroups);
+    return () => {
+      // ページから離れるときにメニューをクリア
+      setMenuGroups([]);
+    };
+  }, [setMenuGroups, resetSettings]);
 
   return (
     <div className="space-y-8">
@@ -62,12 +92,12 @@ export default function SettingsPage() {
                 min={10}
                 max={100}
                 step={1}
-                className="w-full max-w-[200px] px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-colors"
+                className="w-full max-w-[200px] px-3 py-2 bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
               />
               <button
                 type="button"
                 onClick={handleFieldSizeChange}
-                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg transition-colors"
+                className="px-3 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white text-sm rounded-lg transition-colors shadow-lg shadow-emerald-600/20"
               >
                 適用
               </button>
@@ -90,12 +120,12 @@ export default function SettingsPage() {
                 min={10}
                 max={100}
                 step={1}
-                className="w-full max-w-[200px] px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-colors"
+                className="w-full max-w-[200px] px-3 py-2 bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
               />
               <button
                 type="button"
                 onClick={handleFieldSizeChange}
-                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg transition-colors"
+                className="px-3 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white text-sm rounded-lg transition-colors shadow-lg shadow-emerald-600/20"
               >
                 適用
               </button>
@@ -148,12 +178,12 @@ export default function SettingsPage() {
                   min={1}
                   max={16}
                   step={1}
-                  className="w-full max-w-[200px] px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-colors"
+                  className="w-full max-w-[200px] px-3 py-2 bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
                 />
                 <button
                   type="button"
                   onClick={handleGridIntervalChange}
-                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg transition-colors"
+                  className="px-3 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white text-sm rounded-lg transition-colors shadow-lg shadow-emerald-600/20"
                 >
                   適用
                 </button>
@@ -176,7 +206,7 @@ export default function SettingsPage() {
                   displayUnit: e.target.value as "meter" | "yard" | "step",
                 })
               }
-              className="w-full max-w-[200px] px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-colors"
+                className="w-full max-w-[200px] px-3 py-2 bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
             >
               <option value="meter">メートル (m)</option>
               <option value="yard">ヤード (yd)</option>
@@ -227,12 +257,12 @@ export default function SettingsPage() {
                     onChange={(e) => setLocalBackgroundColor(e.target.value)}
                     onBlur={handleBackgroundColorChange}
                     placeholder="#0a6f2b"
-                    className="flex-1 max-w-[200px] px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-colors"
+                    className="flex-1 max-w-[200px] px-3 py-2 bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
                   />
                   <button
                     type="button"
                     onClick={handleBackgroundColorChange}
-                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg transition-colors"
+                    className="px-3 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white text-sm rounded-lg transition-colors shadow-lg shadow-emerald-600/20"
                   >
                     適用
                   </button>
@@ -259,7 +289,7 @@ export default function SettingsPage() {
               setLocalBackgroundColor("#0a6f2b");
               // settingsはresetSettings()で更新されるので、localStateは自動的に同期される
             }}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-100 text-sm rounded-lg transition-colors"
+            className="px-4 py-2 bg-slate-700/30 hover:bg-slate-700/50 text-slate-200 hover:text-slate-100 text-sm rounded-lg transition-colors"
           >
             設定をリセット
           </button>

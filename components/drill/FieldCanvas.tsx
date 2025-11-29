@@ -3,6 +3,7 @@
 
 import { useRef, useState, forwardRef, useImperativeHandle, useMemo } from "react";
 import { Stage, Layer, Line, Circle, Text, Rect, Group } from "react-konva";
+import Konva from "konva";
 
 import type { WorldPos, Member, ArcBinding } from "../../lib/drill/types";
 import { STEP_M } from "../../lib/drill/utils";
@@ -29,7 +30,7 @@ type Props = {
 };
 
 // ===== キャンバス設定 =====
-const CANVAS_WIDTH_PX = 800;
+const CANVAS_WIDTH_PX = 700; // デフォルトサイズを小さくして全体表示を確保
 
 // 矩形選択用の型
 type SelectionRect = { x: number; y: number; w: number; h: number };
@@ -112,6 +113,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
     null
   );
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null);
 
   // ref経由でエクスポート機能を公開
   useImperativeHandle(ref, () => ({
@@ -175,13 +177,26 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
   const stepPxX = useMemo(() => STEP_M * baseScaleX, [baseScaleX]);
   const stepPxY = useMemo(() => STEP_M * baseScaleY, [baseScaleY]);
 
+  // スケール適用後の実際のサイズ
+  const scaledWidth = CANVAS_WIDTH_PX * scale;
+  const scaledHeight = CANVAS_HEIGHT_PX * scale;
+
   return (
-    <Stage
-      ref={stageRef}
-      width={CANVAS_WIDTH_PX}
-      height={CANVAS_HEIGHT_PX}
-      scaleX={scale}
-      scaleY={scale}
+    <div className="w-full h-full flex items-center justify-center overflow-hidden">
+      <div
+        style={{
+          transform: `scale(${scale})`,
+          transformOrigin: 'center center',
+          width: CANVAS_WIDTH_PX,
+          height: CANVAS_HEIGHT_PX,
+        }}
+      >
+        <Stage
+          ref={stageRef}
+          width={CANVAS_WIDTH_PX}
+          height={CANVAS_HEIGHT_PX}
+          scaleX={1}
+          scaleY={1}
       // ===== 個別配置モード用クリックハンドラ =====
       onClick={(e: any) => {
         // 個別配置モードの場合、フィールドをクリックしたらメンバーを配置
@@ -305,13 +320,18 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             const stepIndex = i * gridInterval;
             const x = stepIndex * stepPxX;
             const isBold = stepIndex % 8 === 0;
+            // 中央の線（x軸）は後で別途描画するのでスキップ
+            const centerStep = totalStepsX / 2;
+            const isCenterLine = Math.abs(stepIndex - centerStep) < 0.1; // 中央の線はスキップ
+
+            if (isCenterLine) return null;
 
             return (
               <Line
                 key={`v-${i}`}
                 points={[x, 0, x, CANVAS_HEIGHT_PX]}
-                stroke={isBold ? "#ffffff" : "rgba(255,255,255,0.18)"}
-                strokeWidth={isBold ? 3 : 0.5}
+                stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
+                strokeWidth={isBold ? 2 : 0.5}
               />
             );
           })}
@@ -322,16 +342,57 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             const stepIndex = i * gridInterval;
             const y = stepIndex * stepPxY;
             const isBold = stepIndex % 8 === 0;
+            // 中央の線（y軸）は後で別途描画するのでスキップ
+            const centerStep = totalStepsY / 2;
+            const isCenterLine = Math.abs(stepIndex - centerStep) < 0.1; // 中央の線はスキップ
+
+            if (isCenterLine) return null;
 
             return (
               <Line
                 key={`h-${i}`}
                 points={[0, y, CANVAS_WIDTH_PX, y]}
-                stroke={isBold ? "#ffffff" : "rgba(255,255,255,0.18)"}
-                strokeWidth={isBold ? 3 : 0.5}
+                stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
+                strokeWidth={isBold ? 2 : 0.5}
               />
             );
           })}
+        
+        {/* 30m×30mの正方形の枠（黒い太線） */}
+        {/* 真ん中から上下左右に3ポイント（24ステップ）= 30m */}
+        {(() => {
+          const centerX = CANVAS_WIDTH_PX / 2;
+          const centerY = CANVAS_HEIGHT_PX / 2;
+          const half30m = 24 * stepPxX; // 3ポイント = 24ステップ
+          const half30mY = 24 * stepPxY;
+          
+          return (
+            <Line
+              points={[
+                centerX - half30m, centerY - half30mY, // 左上
+                centerX + half30m, centerY - half30mY, // 右上
+                centerX + half30m, centerY + half30mY, // 右下
+                centerX - half30m, centerY + half30mY, // 左下
+                centerX - half30m, centerY - half30mY, // 左上に戻る
+              ]}
+              stroke="#000000"
+              strokeWidth={3}
+              closed={true}
+            />
+          );
+        })()}
+        
+        {/* 中央の十字（濃く表示） */}
+        <Line
+          points={[CANVAS_WIDTH_PX / 2, 0, CANVAS_WIDTH_PX / 2, CANVAS_HEIGHT_PX]}
+          stroke="#1e293b"
+          strokeWidth={4}
+        />
+        <Line
+          points={[0, CANVAS_HEIGHT_PX / 2, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX / 2]}
+          stroke="#1e293b"
+          strokeWidth={4}
+        />
 
         {/* 外枠 */}
         <Line
@@ -347,8 +408,8 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             0,
             0,
           ]}
-          stroke="#111"
-          strokeWidth={3}
+          stroke="#475569"
+          strokeWidth={2}
         />
 
         {/* ベジェアークのコントロール表示（既存のまま） */}
@@ -421,12 +482,13 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
           })()}
 
         {/* ドット + 楽器名 */}
-        {members.map((m) => {
+        {members.map((m, index) => {
           const pos = displayPositions[m.id];
           if (!pos) return null;
 
           const canvasPos = worldToCanvas(pos);
           const isSelected = selectedIds.includes(m.id);
+          const playerId = `P${index + 1}`;
 
           return (
             <Group
@@ -446,6 +508,12 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
                 const multi =
                   e.evt?.ctrlKey || e.evt?.metaKey || e.evt?.shiftKey;
                 onToggleSelect(m.id, !!multi);
+              }}
+              onMouseEnter={() => {
+                setHoveredMemberId(m.id);
+              }}
+              onMouseLeave={() => {
+                setHoveredMemberId(null);
               }}
               // ★ ドラッグ中に常に handleMove を呼ぶ
   onDragMove={(e: any) => {
@@ -499,13 +567,50 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
                 lineCap="round"
               />
 
-              <Text x={12} 
-              y={-6} 
-              text={m.name} 
-              fontSize={12} 
-              fill="#ffffff" 
-              listening={false}
-               />
+              {/* プレイヤーID（×の下に表示） */}
+              <Text 
+                x={0} 
+                y={12} 
+                text={playerId} 
+                fontSize={10} 
+                fill="#1e293b" 
+                fontStyle="bold"
+                align="center"
+                listening={false}
+              />
+              
+              {/* ホバー時に名前を表示（ツールチップ） */}
+              {hoveredMemberId === m.id && (() => {
+                const textWidth = m.name.length * 7; // おおよその幅
+                const textHeight = 16;
+                const padding = 6;
+                return (
+                  <Group>
+                    {/* 背景 */}
+                    <Rect
+                      x={-(textWidth / 2 + padding)}
+                      y={-28}
+                      width={textWidth + padding * 2}
+                      height={textHeight + padding * 2}
+                      fill="#1e293b"
+                      opacity={0.9}
+                      cornerRadius={4}
+                      listening={false}
+                    />
+                    {/* テキスト */}
+                    <Text 
+                      x={0} 
+                      y={-20} 
+                      text={m.name} 
+                      fontSize={11} 
+                      fill="#ffffff" 
+                      fontStyle="normal"
+                      align="center"
+                      listening={false}
+                    />
+                  </Group>
+                );
+              })()}
             </Group>
           );
         })}
@@ -733,6 +838,8 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
         })()}
       </Layer>
     </Stage>
+      </div>
+    </div>
   );
 });
 

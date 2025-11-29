@@ -22,6 +22,7 @@ export type TimelineProps = {
   onStartPlay: () => void;
   onStopPlay: () => void;
   onAddSetAtCurrent: () => void;
+  confirmedCounts?: number[]; // 確定されているカウントのリスト
 };
 
 /* ==================== Header ==================== */
@@ -48,144 +49,58 @@ const TimelineHeader: React.FC<HeaderProps> = ({
   onAddSetAtCurrent,
 }) => {
   return (
-    <div
-      style={{
-        marginBottom: 4,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 8,
-      }}
-    >
+    <div className="mb-1 flex items-center justify-between gap-2">
       {/* left: transport */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
+      <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={isPlaying ? onStopPlay : onStartPlay}
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 999,
-            border: "1px solid #22c55e",
-            backgroundColor: isPlaying ? "#064e3b" : "#047857",
-            color: "#ecfdf5",
-            fontSize: 13,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-          }}
+          className={`w-6 h-6 rounded-full flex items-center justify-center text-sm transition-colors ${
+            isPlaying
+              ? "bg-emerald-800/50 border border-emerald-600 text-emerald-100 hover:bg-emerald-800/70"
+              : "bg-emerald-700/50 border border-emerald-500 text-emerald-100 hover:bg-emerald-700/70"
+          }`}
         >
           {isPlaying ? "■" : "▶"}
         </button>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 11,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#e5e7eb",
-            }}
-          >
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[11px] uppercase tracking-wider text-slate-200">
             Transport
           </span>
-          <span
-            style={{
-              fontSize: 9,
-              color: "#9ca3af",
-            }}
-          >
+          <span className="text-[9px] text-slate-400">
             Play / Stop & step through counts
           </span>
         </div>
       </div>
 
       {/* right: counter & actions */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 10,
-        }}
-      >
+      <div className="flex items-center gap-1.5 text-[10px]">
         <button
           type="button"
           onClick={onStepPrev}
-          style={{
-            padding: "1px 6px",
-            fontSize: 10,
-            borderRadius: 4,
-            border: "1px solid #4b5563",
-            background: "#020617",
-            color: "#e5e7eb",
-            cursor: "pointer",
-          }}
+          className="px-1.5 py-0.5 rounded bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 text-slate-200 hover:text-slate-100 transition-colors"
         >
           ◀
         </button>
         <button
           type="button"
           onClick={onStepNext}
-          style={{
-            padding: "1px 6px",
-            fontSize: 10,
-            borderRadius: 4,
-            border: "1px solid #4b5563",
-            background: "#020617",
-            color: "#e5e7eb",
-            cursor: "pointer",
-          }}
+          className="px-1.5 py-0.5 rounded bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 text-slate-200 hover:text-slate-100 transition-colors"
         >
           ▶
         </button>
 
-        <span
-          style={{
-            opacity: 0.9,
-            fontSize: 10,
-            padding: "2px 8px",
-            borderRadius: 999,
-            background:
-              "linear-gradient(90deg, rgba(15,23,42,0.9), rgba(15,23,42,0.7))",
-            border: "1px solid rgba(148,163,184,0.5)",
-          }}
-        >
-          <span style={{ textTransform: "uppercase", fontSize: 9 }}>
-            Count
-          </span>{" "}
+        <span className="opacity-90 text-[10px] px-2 py-0.5 rounded-full bg-slate-900/90 border border-slate-500/50 text-slate-200">
+          <span className="uppercase text-[9px]">Count</span>{" "}
           {Math.round(currentCount)}{" "}
-          <span style={{ opacity: 0.7 }}>/ {totalCounts}</span>
+          <span className="opacity-70">/ {totalCounts}</span>
         </span>
 
         {onAddSetAtCurrent && (
           <button
             type="button"
             onClick={onAddSetAtCurrent}
-            style={{
-              marginLeft: 4,
-              padding: "2px 8px",
-              fontSize: 10,
-              borderRadius: 999,
-              border: "1px solid #22c55e",
-              background: "#052e16",
-              color: "#bbf7d0",
-              cursor: "pointer",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
+            className="ml-1 px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-600/50 text-emerald-200 hover:text-emerald-100 uppercase tracking-wider transition-colors"
           >
             + Set @ now
           </button>
@@ -283,14 +198,14 @@ const TimelineSegmentsRow: React.FC<SegmentsRowProps> = ({
         display: "flex",
       }}
     >
-      {segments.map((s) => {
+      {segments.map((s, index) => {
         const widthPx = Math.max((s.endCount - s.startCount) * pxPerCount, 1);
         const isStart = s.id === playStartId;
         const isEnd = s.id === playEndId;
 
         return (
           <div
-            key={s.id}
+            key={`segment-${s.id}-${index}`}
             style={{
               width: widthPx,
               height: "100%",
@@ -459,6 +374,7 @@ type BaseTimelineProps = {
   onStartPlay: () => void;
   onStopPlay: () => void;
   onAddSetAtCurrent?: () => void;
+  confirmedCounts?: number[]; // 確定されているカウントのリスト
 };
 
 const BaseTimeline: React.FC<BaseTimelineProps> = ({
@@ -471,6 +387,7 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   onStartPlay,
   onStopPlay,
   onAddSetAtCurrent,
+  confirmedCounts = [],
 }) => {
   if (!sets || sets.length === 0) return null;
 
@@ -520,19 +437,21 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   };
 
   return (
-    <div
-      style={{
-        width: 800,
-        border: "1px solid #4b5563",
-        borderRadius: 10,
-        background:
-          "radial-gradient(circle at top, #020617, #020617 40%, #020617)",
-        color: "#ffffff",
-        fontSize: 12,
-        padding: "6px 10px 8px",
-        boxShadow: "0 -4px 18px rgba(15,23,42,0.9)",
-      }}
-    >
+    <div className="w-full flex justify-center">
+      <div
+        style={{
+          width: 800,
+          maxWidth: "100%",
+          border: "1px solid #4b5563",
+          borderRadius: 10,
+          background:
+            "radial-gradient(circle at top, #020617, #020617 40%, #020617)",
+          color: "#ffffff",
+          fontSize: 12,
+          padding: "6px 10px 8px",
+          boxShadow: "0 -4px 18px rgba(15,23,42,0.9)",
+        }}
+      >
       <TimelineHeader
         currentCount={currentCount}
         totalCounts={totalCounts}
@@ -545,6 +464,7 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
       />
 
       <div
+        className="timeline-scrollbar"
         style={{
           width: "100%",
           overflowX: "auto",
@@ -583,6 +503,40 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
             playEndId={playEndId}
             pxPerCount={pxPerCount}
           />
+
+          {/* 確定カウントのマーカー */}
+          {confirmedCounts.map((count) => {
+            const x = count * pxPerCount;
+            return (
+              <div
+                key={`confirmed-${count}`}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  bottom: 0,
+                  left: x - 1,
+                  width: 2,
+                  background: "#10b981", // emerald-500
+                  pointerEvents: "none",
+                  boxShadow: "0 0 4px rgba(16,185,129,0.6)",
+                  zIndex: 5,
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: -3,
+                    left: -4,
+                    width: 0,
+                    height: 0,
+                    borderLeft: "4px solid transparent",
+                    borderRight: "4px solid transparent",
+                    borderBottom: "6px solid #10b981",
+                  }}
+                />
+              </div>
+            );
+          })}
 
           <Playhead
             currentCount={clampCount(currentCount)}
@@ -634,6 +588,7 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
           </div>
         </div>
       </div>
+      </div>
     </div>
   );
 };
@@ -659,60 +614,61 @@ export default function Timeline(props: TimelineProps) {
   const endSet = sets.find((s) => s.id === playEndId);
 
   return (
-    <div className="space-y-2">
-      {/* Range header (上) */}
-      <div className="flex flex-wrap items-center gap-3 text-[11px]">
-        <div className="flex items-center gap-2">
-          <span className="text-slate-300 text-[11px] uppercase tracking-[0.12em]">
-            Range
-          </span>
-          <select
-            className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px]"
-            value={playStartId}
-            onChange={(e) => onChangePlayStart(e.target.value)}
-          >
-            {sets.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-slate-400 text-[10px]">→</span>
-          <select
-            className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px]"
-            value={playEndId}
-            onChange={(e) => onChangePlayEnd(e.target.value)}
-          >
-            {sets.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {startSet && endSet && (
-          <div className="text-[10px] text-slate-400">
-            ({startSet.name} {startSet.startCount} → {endSet.name}{" "}
-            {endSet.startCount})
+    <div className="w-full flex justify-center">
+      <div className="w-full max-w-[800px] space-y-3">
+        {/* Range header (上) */}
+        <div className="flex flex-wrap items-center gap-3 text-[11px] px-2">
+          <div className="flex items-center gap-2">
+            <span className="text-slate-300 text-[11px] uppercase tracking-[0.12em] font-semibold">
+              Range
+            </span>
+            <select
+              className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-900 transition-colors"
+              value={playStartId}
+              onChange={(e) => onChangePlayStart(e.target.value)}
+            >
+              {sets.map((s, index) => (
+                <option key={`start-${s.id}-${index}`} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-slate-400 text-[10px]">→</span>
+            <select
+              className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-900 transition-colors"
+              value={playEndId}
+              onChange={(e) => onChangePlayEnd(e.target.value)}
+            >
+              {sets.map((s, index) => (
+                <option key={`end-${s.id}-${index}`} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
 
-        <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-300">
-          <span className="text-slate-400">
-            Now: {Math.round(currentCount)} count
-          </span>
-          <button
-            type="button"
-            onClick={onAddSetAtCurrent}
-            className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[10px] hover:bg-slate-900"
-          >
-            + Insert set @ current
-          </button>
+          {startSet && endSet && (
+            <div className="text-[10px] text-slate-400/80 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/40">
+              ({startSet.name} {startSet.startCount} → {endSet.name}{" "}
+              {endSet.startCount})
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-2 text-[10px]">
+            <span className="text-slate-400/90 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/40">
+              Now: <span className="text-slate-200 font-medium">{Math.round(currentCount)}</span> count
+            </span>
+            <button
+              type="button"
+              onClick={onAddSetAtCurrent}
+              className="rounded-md border border-slate-600/60 bg-slate-800/50 px-2.5 py-1 text-[10px] hover:bg-slate-700/50 hover:border-slate-500/60 text-slate-200 transition-all duration-200"
+            >
+              + Insert set @ current
+            </button>
+          </div>
         </div>
-      </div>
 
-      <BaseTimeline
+        <BaseTimeline
         sets={sets}
         playStartId={playStartId}
         playEndId={playEndId}
@@ -722,7 +678,9 @@ export default function Timeline(props: TimelineProps) {
         onStartPlay={onStartPlay}
         onStopPlay={onStopPlay}
         onAddSetAtCurrent={onAddSetAtCurrent}
+        confirmedCounts={props.confirmedCounts}
       />
+      </div>
     </div>
   );
 }

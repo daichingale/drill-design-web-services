@@ -14,8 +14,9 @@ import {
   exportDrillToYAML,
   importDrillFromYAML,
 } from "@/lib/drill/storage";
-import { downloadImage, exportSetsToPDF, printCurrentSet } from "@/lib/drill/export";
+import { downloadImage, exportSetsToPDF, printCurrentSet, printSelectedSets } from "@/lib/drill/export";
 import { exportSetWithInfo } from "@/lib/drill/imageExport";
+import type { WorldPos } from "@/lib/drill/types";
 
 type UseDrillExportParams = {
   sets: UiSet[];
@@ -25,6 +26,8 @@ type UseDrillExportParams = {
   canvasRef: React.RefObject<FieldCanvasRef | null>;
   restoreState: (sets: UiSet[], selectedIds: string[], currentSetId: string) => void;
   isRestoringRef: React.MutableRefObject<boolean>;
+  setCurrentSetId?: (id: string) => void; // Setを切り替える関数
+  getSetPositions?: (setId: string) => Record<string, WorldPos>; // Setの位置情報を取得する関数
 };
 
 export function useDrillExport({
@@ -35,6 +38,8 @@ export function useDrillExport({
   canvasRef,
   restoreState,
   isRestoringRef,
+  setCurrentSetId,
+  getSetPositions,
 }: UseDrillExportParams) {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [pendingExportType, setPendingExportType] = useState<"image" | "pdf" | "print" | null>(null);
@@ -214,9 +219,24 @@ export function useDrillExport({
       }
 
       try {
+        const originalSetId = currentSetId;
+        
         const getSetImage = async (setId: string): Promise<Blob | null> => {
-          if (setId === currentSetId) {
-            return await canvasRef.current?.exportImage("png", 2) || null;
+          // Setを一時的に切り替えて画像を取得
+          if (setCurrentSetId && setId !== currentSetId) {
+            setCurrentSetId(setId);
+            // Set切り替え後の描画を待つ（より長めに待機）
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+
+          if (canvasRef.current) {
+            try {
+              const imageBlob = await canvasRef.current.exportImage("png", 2);
+              return imageBlob;
+            } catch (error) {
+              console.error(`Failed to export image for set ${setId}:`, error);
+              return null;
+            }
           }
           return null;
         };
@@ -232,8 +252,9 @@ export function useDrillExport({
             margin: 10,
             showGrid: true,
             showLabels: true,
-            includeAllSets,
+            includeAllSets: includeAllSets && !options.selectedSetIds, // selectedSetIdsがある場合は無視
             setsPerPage: 1,
+            selectedSetIds: options.selectedSetIds, // 選択されたSetのIDリスト
           },
           {
             includeSetName: options.includeSetName,
@@ -243,12 +264,17 @@ export function useDrillExport({
             includeField: options.includeField,
           }
         );
+
+        // 元のSetに戻す
+        if (setCurrentSetId && originalSetId !== currentSetId) {
+          setCurrentSetId(originalSetId);
+        }
       } catch (error) {
         console.error("PDF export error:", error);
         alert("PDFのエクスポートに失敗しました");
       }
     },
-    [canvasRef, sets, members, currentSetId]
+    [canvasRef, sets, members, currentSet, currentSetId, setCurrentSetId]
   );
 
   // 印刷（ダイアログを開く）
@@ -260,20 +286,84 @@ export function useDrillExport({
   // 印刷（オプション選択後）
   const handlePrintWithOptions = useCallback(
     async (options: ExportOptions) => {
-      const canvasElement = document.querySelector(".field-canvas-container");
-      if (!canvasElement) {
-        alert("印刷する要素が見つかりません");
-        return;
-      }
-
       try {
-        await printCurrentSet(canvasElement as HTMLElement, currentSet, options);
+        // 選択されたSetがある場合は複数Setを印刷
+        if (options.selectedSetIds && options.selectedSetIds.length > 0) {
+          const originalSetId = currentSetId;
+          const setsToPrint = sets.filter(s => options.selectedSetIds!.includes(s.id));
+          
+          for (let i = 0; i < setsToPrint.length; i++) {
+            const set = setsToPrint[i];
+            
+            // Setを一時的に切り替えて画像を取得
+            if (setCurrentSetId && set.id !== currentSetId) {
+              setCurrentSetId(set.id);
+              // Set切り替え後の描画を待つ
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // キャンバス要素を取得
+            const canvasElement = document.querySelector(".field-canvas-container");
+            if (!canvasElement) {
+              console.warn(`Set ${set.id} のキャンバスが見つかりません`);
+              continue;
+            }
+            
+            // 画像をエクスポートしてimg要素を作成
+            let elementToPrint: HTMLElement | null = null;
+            if (canvasRef.current) {
+              try {
+                const imageBlob = await canvasRef.current.exportImage("png", 2);
+                if (imageBlob) {
+                  const imageUrl = URL.createObjectURL(imageBlob);
+                  const img = document.createElement("img");
+                  img.src = imageUrl;
+                  img.style.maxWidth = "100%";
+                  img.style.height = "auto";
+                  img.style.border = "1px solid #ccc";
+                  
+                  const wrapper = document.createElement("div");
+                  wrapper.className = "print-canvas";
+                  wrapper.appendChild(img);
+                  elementToPrint = wrapper;
+                }
+              } catch (error) {
+                console.error(`Failed to export image for set ${set.id}:`, error);
+              }
+            }
+            
+            // 画像が取得できなかった場合は、現在のキャンバス要素を使用
+            if (!elementToPrint) {
+              elementToPrint = canvasElement as HTMLElement;
+            }
+            
+            await printCurrentSet(elementToPrint, set, options);
+            
+            // 複数Setの場合は少し待機
+            if (i < setsToPrint.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          
+          // 元のSetに戻す
+          if (setCurrentSetId && originalSetId !== currentSetId) {
+            setCurrentSetId(originalSetId);
+          }
+        } else {
+          // 従来の動作（現在のSetのみ）
+          const canvasElement = document.querySelector(".field-canvas-container");
+          if (!canvasElement) {
+            alert("印刷する要素が見つかりません");
+            return;
+          }
+          await printCurrentSet(canvasElement as HTMLElement, currentSet, options);
+        }
       } catch (error) {
         console.error("Print error:", error);
         alert("印刷に失敗しました");
       }
     },
-    [currentSet]
+    [currentSet, sets, currentSetId, canvasRef, setCurrentSetId]
   );
 
   // エクスポートオプション確定時の処理
@@ -294,6 +384,7 @@ export function useDrillExport({
   return {
     exportDialogOpen,
     setExportDialogOpen,
+    pendingExportType, // 追加
     handleSave,
     handleLoad,
     handleExportJSON,
