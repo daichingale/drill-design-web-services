@@ -1,9 +1,15 @@
 // app/members/page.tsx
 "use client";
 
-import { ChangeEvent } from "react";
+import { ChangeEvent, useEffect } from "react";
 import { useMembers } from "@/context/MembersContext";
 import { PART_LIST } from "../constants/parts";
+import {
+  saveMembersToLocalStorage,
+  loadMembersFromLocalStorage,
+  exportMembersToJSON,
+  importMembersFromJSON,
+} from "@/lib/drill/storage";
 
 export default function MembersPage() {
   const { members, setMembers } = useMembers();
@@ -43,9 +49,98 @@ export default function MembersPage() {
     );
   };
 
+  const handleSave = () => {
+    const success = saveMembersToLocalStorage(members);
+    if (success) {
+      alert("メンバーデータを保存しました");
+    } else {
+      alert("保存に失敗しました");
+    }
+  };
+
+  const handleLoad = () => {
+    if (confirm("現在のデータを上書きしますか？")) {
+      const savedMembers = loadMembersFromLocalStorage();
+      if (savedMembers && savedMembers.length > 0) {
+        setMembers(() => savedMembers);
+        alert("メンバーデータを読み込みました");
+      } else {
+        alert("保存されたデータが見つかりませんでした");
+      }
+    }
+  };
+
+  const handleExportJSON = () => {
+    const json = exportMembersToJSON(members);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `members-${new Date().toISOString().split("T")[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportJSON = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json";
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const jsonString = event.target?.result as string;
+        const importedMembers = importMembersFromJSON(jsonString);
+        
+        if (importedMembers && importedMembers.length > 0) {
+          if (confirm("現在のデータを上書きしますか？")) {
+            setMembers(() => importedMembers);
+            alert("メンバーデータをインポートしました");
+          }
+        } else {
+          alert("インポートに失敗しました。ファイル形式を確認してください。");
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">メンバー管理</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">メンバー管理</h1>
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            onClick={handleSave}
+            className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
+          >
+            保存
+          </button>
+          <button
+            onClick={handleLoad}
+            className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
+          >
+            読み込み
+          </button>
+          <button
+            onClick={handleExportJSON}
+            className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
+          >
+            エクスポート
+          </button>
+          <button
+            onClick={handleImportJSON}
+            className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
+          >
+            インポート
+          </button>
+        </div>
+      </div>
 
       <button
         onClick={addMember}

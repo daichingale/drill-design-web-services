@@ -76,6 +76,9 @@ type UseDrillPlaybackResult = {
   startPlayBySetId: (startSetId: string, endSetId: string) => void;
   stopPlay: () => void;
   clearPlaybackView: () => void;
+  setRecordingMode: (recording: boolean) => void; // 録画中フラグ
+  setCountFromMusic: (count: number) => void; // 音楽からカウントを設定
+  setMusicSyncMode: (enabled: boolean) => void; // 音楽同期モード
 };
 
 export function useDrillPlayback(
@@ -93,6 +96,8 @@ export function useDrillPlayback(
   const playRangeRef = useRef<{ startCount: number; endCount: number } | null>(
     null
   );
+  const isRecordingRef = useRef(false);
+  const musicSyncModeRef = useRef(false); // 音楽同期モード
 
   // Drill 再構築
   useEffect(() => {
@@ -119,13 +124,18 @@ export function useDrillPlayback(
       const engine = engineRef.current;
 
       if (engine && isPlaying) {
-        engine.update(dt);
-        const positions = engine.getCurrentPositionsMap();
-        setPlaybackPositions(positions);
-        setCurrentCount(engine.currentCount);
+        // 音楽同期モードの場合は、エンジンの自動更新をスキップ
+        // （カウントは音楽から直接設定される）
+        if (!musicSyncModeRef.current) {
+          engine.update(dt);
+          const positions = engine.getCurrentPositionsMap();
+          setPlaybackPositions(positions);
+          setCurrentCount(engine.currentCount);
+        }
 
         const range = playRangeRef.current;
-        if (range && engine.currentCount >= range.endCount) {
+        // 録画中は自動停止しない
+        if (range && engine.currentCount >= range.endCount && !isRecordingRef.current && !musicSyncModeRef.current) {
           console.log(
             "▶ reached end of range",
             "currentCount=",
@@ -240,6 +250,26 @@ export function useDrillPlayback(
     setPlaybackPositions({});
   };
 
+  const setRecordingMode = (recording: boolean) => {
+    isRecordingRef.current = recording;
+  };
+
+  // 音楽からカウントを設定（音楽同期モード用）
+  const setCountFromMusic = (count: number) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    
+    engine.setCount(count);
+    const positions = engine.getCurrentPositionsMap();
+    setPlaybackPositions(positions);
+    setCurrentCount(count);
+  };
+
+  // 音楽同期モードを設定
+  const setMusicSyncMode = (enabled: boolean) => {
+    musicSyncModeRef.current = enabled;
+  };
+
   return {
     currentCount,
     isPlaying,
@@ -248,5 +278,8 @@ export function useDrillPlayback(
     startPlayBySetId,
     stopPlay,
     clearPlaybackView,
+    setRecordingMode,
+    setCountFromMusic,
+    setMusicSyncMode,
   };
 }

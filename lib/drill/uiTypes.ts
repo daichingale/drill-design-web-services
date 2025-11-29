@@ -8,4 +8,5 @@ export type UiSet = {
   startCount: number;         // その Set の開始カウント（絶対値）
   positions: Record<string, WorldPos>;
   note: string;
+  instructions: string;        // セットごとの動き方・指示
 };
