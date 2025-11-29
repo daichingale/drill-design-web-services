@@ -581,31 +581,93 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
               
               {/* ホバー時に名前を表示（ツールチップ） */}
               {hoveredMemberId === m.id && (() => {
-                const textWidth = m.name.length * 7; // おおよその幅
-                const textHeight = 16;
-                const padding = 6;
+                const fontSize = 12;
+                const paddingX = 12;
+                const paddingY = 6;
+                const tooltipY = -35; // メンバーの上に表示
+                
+                // Canvas APIを使って実際のテキスト幅を測定
+                const measureTextWidth = (text: string, font: string): number => {
+                  // 一時的なCanvas要素を作成してテキスト幅を測定
+                  const canvas = document.createElement('canvas');
+                  const context = canvas.getContext('2d');
+                  if (!context) return text.length * fontSize * 0.7; // フォールバック
+                  
+                  context.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`;
+                  const metrics = context.measureText(text);
+                  return metrics.width;
+                };
+                
+                // 実際のテキスト幅を測定
+                const actualTextWidth = measureTextWidth(m.name, `600 ${fontSize}px`);
+                const textHeight = fontSize + 2;
+                // テキスト幅 + パディングでツールチップの幅を決定
+                const totalWidth = actualTextWidth + paddingX * 2;
+                
                 return (
                   <Group>
-                    {/* 背景 */}
+                    {/* 影（背景の後ろに表示） */}
                     <Rect
-                      x={-(textWidth / 2 + padding)}
-                      y={-28}
-                      width={textWidth + padding * 2}
-                      height={textHeight + padding * 2}
-                      fill="#1e293b"
-                      opacity={0.9}
-                      cornerRadius={4}
+                      x={-totalWidth / 2 + 1}
+                      y={tooltipY + 1}
+                      width={totalWidth}
+                      height={textHeight + paddingY * 2}
+                      fill="#000000"
+                      opacity={0.3}
+                      cornerRadius={6}
                       listening={false}
                     />
-                    {/* テキスト */}
+                    {/* 背景（グラデーション風） */}
+                    <Rect
+                      x={-totalWidth / 2}
+                      y={tooltipY}
+                      width={totalWidth}
+                      height={textHeight + paddingY * 2}
+                      fill="#1e293b"
+                      opacity={0.95}
+                      cornerRadius={6}
+                      listening={false}
+                    />
+                    {/* 上部のアクセントライン */}
+                    <Rect
+                      x={-totalWidth / 2}
+                      y={tooltipY}
+                      width={totalWidth}
+                      height={2}
+                      fill="#10b981"
+                      opacity={0.8}
+                      cornerRadius={[6, 6, 0, 0]}
+                      listening={false}
+                    />
+                    {/* テキスト（中央揃え） */}
                     <Text 
                       x={0} 
-                      y={-20} 
+                      y={tooltipY + paddingY + 1} 
                       text={m.name} 
-                      fontSize={11} 
-                      fill="#ffffff" 
-                      fontStyle="normal"
+                      fontSize={fontSize} 
+                      fill="#f1f5f9" 
+                      fontStyle="600"
                       align="center"
+                      verticalAlign="middle"
+                      offsetX={actualTextWidth / 2}
+                      listening={false}
+                    />
+                    {/* 矢印（メンバーへの接続） */}
+                    <Line
+                      points={[0, tooltipY + textHeight + paddingY * 2, 0, -10]}
+                      stroke="#10b981"
+                      strokeWidth={1.5}
+                      opacity={0.6}
+                      lineCap="round"
+                      listening={false}
+                    />
+                    {/* 矢印の先端 */}
+                    <Circle
+                      x={0}
+                      y={-10}
+                      radius={2}
+                      fill="#10b981"
+                      opacity={0.8}
                       listening={false}
                     />
                   </Group>

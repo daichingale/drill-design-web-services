@@ -16,6 +16,9 @@ type Props = {
   onAddSet: () => void;
   onDeleteSet?: (id: string) => void;
   onReorderSet?: (id: string, direction: 'up' | 'down') => void;
+  onChangeSetName?: (id: string, name: string) => void; // セット名編集
+  onCopySet?: (sourceSetId: string, targetSetId?: string) => void; // セット全体をコピー
+  onCopySelectedMembers?: (targetSetId: string) => void; // 選択メンバーのみコピー
 
   onArrangeLineSelected: () => void;
   onArrangeLineBySelectionOrder?: () => void;
@@ -53,6 +56,9 @@ export default function DrillControls({
   onAddSet,
   onDeleteSet,
   onReorderSet,
+  onChangeSetName,
+  onCopySet,
+  onCopySelectedMembers,
   onArrangeLineSelected,
   onArrangeLineBySelectionOrder,
   onReorderSelection,
@@ -128,6 +134,75 @@ export default function DrillControls({
                 ))}
               </select>
             </div>
+
+            {/* セット名編集 */}
+            {onChangeSetName && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">
+                  セット名
+                </label>
+                <input
+                  type="text"
+                  className="flex-1 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
+                  value={currentSet.name}
+                  onChange={(e) => onChangeSetName(currentSetId, e.target.value)}
+                  placeholder="Set 1"
+                />
+              </div>
+            )}
+
+            {/* コピー/ペースト機能 */}
+            {(onCopySet || onCopySelectedMembers) && (
+              <div className="space-y-2 pt-2 border-t border-slate-700/60">
+                <span className="text-xs text-slate-400/90 uppercase tracking-wider block">
+                  コピー/ペースト
+                </span>
+                {onCopySet && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400/80 block">セット全体をコピー</label>
+                    <select
+                      className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-2 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all duration-200 shadow-inner"
+                      onChange={(e) => {
+                        if (e.target.value && e.target.value !== currentSetId) {
+                          onCopySet(e.target.value, currentSetId);
+                          e.target.value = "";
+                        }
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" className="bg-slate-800">コピー元を選択</option>
+                      {sets.filter((s) => s.id !== currentSetId).map((s) => (
+                        <option key={s.id} value={s.id} className="bg-slate-800">
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {onCopySelectedMembers && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400/80 block">選択メンバーをコピー</label>
+                    <select
+                      className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-2 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all duration-200 shadow-inner"
+                      onChange={(e) => {
+                        if (e.target.value && e.target.value !== currentSetId) {
+                          onCopySelectedMembers(e.target.value);
+                          e.target.value = "";
+                        }
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" className="bg-slate-800">ペースト先を選択</option>
+                      {sets.filter((s) => s.id !== currentSetId).map((s) => (
+                        <option key={s.id} value={s.id} className="bg-slate-800">
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
               <label className="text-xs text-slate-400/90 uppercase tracking-wider">

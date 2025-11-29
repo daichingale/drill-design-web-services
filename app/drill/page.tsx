@@ -96,6 +96,9 @@ export default function DrillPage() {
     handleChangeInstructions,
     handleChangeNextMove,
     handleChangeSetStartCount,
+    handleChangeSetName,
+    copySet,
+    copySelectedMembers,
     arrangeLineSelected,
     arrangeLineBySelectionOrder,
     reorderSelection,
@@ -970,9 +973,9 @@ export default function DrillPage() {
       />
       <div className="relative h-screen bg-slate-900 text-slate-100 flex flex-col overflow-hidden">
         {/* メインコンテンツエリア（flex、高さ固定） */}
-        <div className="flex-1 flex gap-3 overflow-hidden px-3 py-3">
+        <div className="flex-1 flex gap-3 overflow-hidden px-3 py-3 max-md:px-1 max-md:py-1">
           {/* 左サイドバー（コマンド系） */}
-          <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar">
+          <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar max-md:hidden">
             {/* DrillControls */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-4 shadow-xl">
               <DrillControls
@@ -1005,6 +1008,9 @@ export default function DrillPage() {
                 onAddSet={addSetTail}
                 onDeleteSet={deleteSet}
                 onReorderSet={reorderSet}
+                onChangeSetName={handleChangeSetName}
+                onCopySet={copySet}
+                onCopySelectedMembers={copySelectedMembers}
                 onArrangeLineSelected={arrangeLineSelected}
                 onArrangeLineBySelectionOrder={arrangeLineBySelectionOrder}
                 onReorderSelection={reorderSelection}
@@ -1048,8 +1054,8 @@ export default function DrillPage() {
           </div>
 
           {/* 中央（フィールド） */}
-          <div className="flex-1 flex flex-col gap-3 overflow-hidden items-center">
-              <div className="flex items-center justify-between px-1 w-full max-w-[1400px]">
+          <div className="flex-1 flex flex-col gap-3 overflow-hidden items-center max-md:gap-1">
+              <div className="flex items-center justify-between px-1 w-full max-w-[1400px] max-md:px-2">
               <h2 className="text-base font-semibold text-slate-200 uppercase tracking-wider">
                 ドリルエディタ
               </h2>
@@ -1133,7 +1139,7 @@ export default function DrillPage() {
           </div>
 
           {/* 右サイドバー */}
-          <div className="w-56 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar">
+          <div className="w-56 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar max-md:hidden">
             {/* SidePanel */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl overflow-hidden">
               <DrillSidePanel
@@ -1238,7 +1244,7 @@ export default function DrillPage() {
         </div>
 
         {/* タイムライン（固定、下部） */}
-        <div className="flex-shrink-0 border-t border-slate-800/80 bg-gradient-to-br from-slate-900/95 to-slate-950/95 backdrop-blur-sm z-10 px-3 py-3 shadow-2xl">
+        <div className="flex-shrink-0 border-t border-slate-800/80 bg-gradient-to-br from-slate-900/95 to-slate-950/95 backdrop-blur-sm z-10 px-3 py-3 shadow-2xl max-md:px-1 max-md:py-1">
           <Timeline
             sets={sets.map((s, index) => ({
               id: s.id,

@@ -50,6 +50,9 @@ type UseDrillSetsResult = {
   handleChangeInstructions: (value: string) => void;
   handleChangeNextMove: (value: string) => void;
   handleChangeSetStartCount: (id: string, value: number) => void;
+  handleChangeSetName: (id: string, name: string) => void; // セット名編集
+  copySet: (sourceSetId: string, targetSetId?: string) => void; // セット全体をコピー
+  copySelectedMembers: (targetSetId: string) => void; // 選択メンバーのみコピー
 
   arrangeLineSelected: () => void;
   arrangeLineBySelectionOrder: () => void; // 選択順に整列
@@ -460,6 +463,70 @@ const handleSelectBulk = (ids: string[]) => {
       )
     );
   };
+
+  // セット名編集
+  const handleChangeSetName = useCallback((id: string, name: string) => {
+    setSets((prev) =>
+      prev.map((set) => (set.id === id ? { ...set, name } : set))
+    );
+  }, []);
+
+  // セット全体をコピー（sourceSetIdからtargetSetIdへ、targetSetIdが未指定の場合は現在のセットへ）
+  const copySet = useCallback((sourceSetId: string, targetSetId?: string) => {
+    const sourceSet = sets.find((s) => s.id === sourceSetId);
+    if (!sourceSet) return;
+
+    const targetId = targetSetId || currentSetId;
+    setSets((prev) =>
+      prev.map((set) => {
+        if (set.id !== targetId) return set;
+        return {
+          ...set,
+          positions: structuredClone(sourceSet.positions),
+          positionsByCount: sourceSet.positionsByCount
+            ? structuredClone(sourceSet.positionsByCount)
+            : undefined,
+          note: sourceSet.note,
+          instructions: sourceSet.instructions,
+          nextMove: sourceSet.nextMove,
+        };
+      })
+    );
+  }, [sets, currentSetId]);
+
+  // 選択メンバーのみをコピー（現在のセットからtargetSetIdへ）
+  const copySelectedMembers = useCallback(
+    (targetSetId: string) => {
+      if (selectedIds.length === 0) {
+        alert("コピーするメンバーを選択してください");
+        return;
+      }
+
+      const currentSet = sets.find((s) => s.id === currentSetId);
+      if (!currentSet) return;
+
+      const positionsToCopy: Record<string, WorldPos> = {};
+      selectedIds.forEach((id) => {
+        if (currentSet.positions[id]) {
+          positionsToCopy[id] = { ...currentSet.positions[id] };
+        }
+      });
+
+      setSets((prev) =>
+        prev.map((set) => {
+          if (set.id !== targetSetId) return set;
+          return {
+            ...set,
+            positions: {
+              ...set.positions,
+              ...positionsToCopy,
+            },
+          };
+        })
+      );
+    },
+    [selectedIds, sets, currentSetId]
+  );
 
   // Set の startCount 編集（重複は NG）
   const handleChangeSetStartCount = (id: string, value: number) => {
@@ -977,6 +1044,9 @@ const handleSelectBulk = (ids: string[]) => {
     handleChangeInstructions,
     handleChangeNextMove,
     handleChangeSetStartCount,
+    handleChangeSetName,
+    copySet,
+    copySelectedMembers,
 
     arrangeLineSelected,
     arrangeLineBySelectionOrder,
