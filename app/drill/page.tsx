@@ -31,6 +31,8 @@ import {
 import ExportOptionsDialog from "@/components/drill/ExportOptionsDialog";
 import { useMusicSync } from "@/hooks/useMusicSync";
 import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
+import CommandPalette, { type Command } from "@/components/drill/CommandPalette";
+import HeaderMenu from "@/components/drill/HeaderMenu";
 
 // UiSet型はlib/drill/uiTypes.tsからインポートするため、ここでは定義しない
 
@@ -44,6 +46,7 @@ export default function DrillPage() {
   const { members } = useMembers();
   const { settings } = useSettings();
   const [isMounted, setIsMounted] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // クライアント側でのみマウントされたことを確認
   useEffect(() => {
@@ -245,6 +248,191 @@ export default function DrillPage() {
     isRestoringRef,
   });
 
+  // コマンドパレット用のコマンドリスト
+  const commands: Command[] = [
+    // ファイル操作
+    {
+      id: "save",
+      label: "保存",
+      shortcut: "Ctrl+S",
+      icon: "💾",
+      group: "file",
+      action: handleSave,
+    },
+    {
+      id: "load",
+      label: "読み込み",
+      shortcut: "Ctrl+O",
+      icon: "📂",
+      group: "file",
+      action: handleLoad,
+    },
+    // 編集操作
+    {
+      id: "undo",
+      label: "元に戻す",
+      shortcut: "Ctrl+Z",
+      icon: "↶",
+      group: "edit",
+      action: undo,
+    },
+    {
+      id: "redo",
+      label: "やり直す",
+      shortcut: "Ctrl+Y",
+      icon: "↷",
+      group: "edit",
+      action: redo,
+    },
+    // エクスポート
+    {
+      id: "export-png",
+      label: "PNG画像としてエクスポート",
+      icon: "🖼️",
+      group: "export",
+      action: () => handleExportImage("png"),
+    },
+    {
+      id: "export-jpeg",
+      label: "JPEG画像としてエクスポート",
+      icon: "🖼️",
+      group: "export",
+      action: () => handleExportImage("jpeg"),
+    },
+    {
+      id: "export-pdf",
+      label: "PDFとしてエクスポート",
+      icon: "📄",
+      group: "export",
+      action: () => handleExportPDF(false),
+    },
+    {
+      id: "print",
+      label: "印刷",
+      shortcut: "Ctrl+P",
+      icon: "🖨️",
+      group: "export",
+      action: handlePrint,
+    },
+    {
+      id: "export-json",
+      label: "JSON形式でエクスポート",
+      icon: "📦",
+      group: "export",
+      action: handleExportJSON,
+    },
+    {
+      id: "export-yaml",
+      label: "YAML形式でエクスポート",
+      icon: "📝",
+      group: "export",
+      action: handleExportYAML,
+    },
+    // インポート
+    {
+      id: "import-json",
+      label: "JSON形式からインポート",
+      icon: "📦",
+      group: "import",
+      action: handleImportJSON,
+    },
+    {
+      id: "import-yaml",
+      label: "YAML形式からインポート",
+      icon: "📝",
+      group: "import",
+      action: handleImportYAML,
+    },
+  ];
+
+  // ヘッダーメニュー用のグループ
+  const menuGroups = [
+    {
+      label: "ファイル",
+      items: [
+        {
+          label: "保存",
+          icon: "💾",
+          shortcut: "Ctrl+S",
+          action: handleSave,
+        },
+        {
+          label: "読み込み",
+          icon: "📂",
+          shortcut: "Ctrl+O",
+          action: handleLoad,
+        },
+        { divider: true },
+        {
+          label: "JSON形式でエクスポート",
+          icon: "📦",
+          action: handleExportJSON,
+        },
+        {
+          label: "YAML形式でエクスポート",
+          icon: "📝",
+          action: handleExportYAML,
+        },
+        { divider: true },
+        {
+          label: "JSON形式からインポート",
+          icon: "📦",
+          action: handleImportJSON,
+        },
+        {
+          label: "YAML形式からインポート",
+          icon: "📝",
+          action: handleImportYAML,
+        },
+      ],
+    },
+    {
+      label: "編集",
+      items: [
+        {
+          label: "元に戻す",
+          icon: "↶",
+          shortcut: "Ctrl+Z",
+          action: undo,
+          disabled: !canUndo,
+        },
+        {
+          label: "やり直す",
+          icon: "↷",
+          shortcut: "Ctrl+Y",
+          action: redo,
+          disabled: !canRedo,
+        },
+      ],
+    },
+    {
+      label: "エクスポート",
+      items: [
+        {
+          label: "PNG画像",
+          icon: "🖼️",
+          action: () => handleExportImage("png"),
+        },
+        {
+          label: "JPEG画像",
+          icon: "🖼️",
+          action: () => handleExportImage("jpeg"),
+        },
+        {
+          label: "PDF",
+          icon: "📄",
+          action: () => handleExportPDF(false),
+        },
+        {
+          label: "印刷",
+          icon: "🖨️",
+          shortcut: "Ctrl+P",
+          action: handlePrint,
+        },
+      ],
+    },
+  ];
+
   // ===== 録画機能 =====
   const {
     isRecording2D,
@@ -327,6 +515,13 @@ export default function DrillPage() {
         target.tagName === "TEXTAREA" ||
         target.isContentEditable
       ) {
+        return;
+      }
+
+      // Ctrl/Cmd + K : コマンドパレット
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen(true);
         return;
       }
 
@@ -434,6 +629,13 @@ export default function DrillPage() {
 
   return (
     <>
+      {/* コマンドパレット */}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        commands={commands}
+      />
+
       {/* エクスポートオプションダイアログ */}
       <ExportOptionsDialog
         isOpen={exportDialogOpen}
@@ -442,11 +644,9 @@ export default function DrillPage() {
         }}
         onConfirm={handleExportOptionsConfirm}
       />
-      <div className="relative min-h-screen bg-slate-900 text-slate-100">
-      {/* タイムラインと被らないように下に余白を足す */}
-      <main className="max-w-6xl mx-auto px-4 py-4 space-y-4 pb-32">
-        {/* ヘッダ */}
-        <header className="flex items-center justify-between border-b border-slate-800 pb-2">
+      <div className="relative h-screen bg-slate-900 text-slate-100 flex flex-col overflow-hidden">
+        {/* ヘッダ（固定） */}
+        <header className="flex-shrink-0 flex items-center justify-between border-b border-slate-800 px-4 py-2 bg-slate-900 z-10">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
               Drill Design Web
@@ -455,133 +655,116 @@ export default function DrillPage() {
               Pywareライクなブラウザ版ドリルエディタ
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {/* 保存・読み込みボタン */}
-            <div className="flex items-center gap-1 text-xs">
-              <button
-                onClick={handleSave}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="保存 (Ctrl+S)"
+          <div className="flex items-center gap-4">
+            {/* メニューバー */}
+            <HeaderMenu groups={menuGroups} />
+
+            {/* コマンドパレット起動ボタン */}
+            <button
+              onClick={() => setCommandPaletteOpen(true)}
+              className="px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 bg-slate-800/50 hover:bg-slate-800 border border-slate-700 rounded-md transition-colors flex items-center gap-2"
+              title="コマンドパレットを開く (Ctrl+K)"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                保存
-              </button>
-              <button
-                onClick={handleLoad}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="読み込み"
-              >
-                読み込み
-              </button>
-              <button
-                onClick={handleExportJSON}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="JSONエクスポート"
-              >
-                JSON出力
-              </button>
-              <button
-                onClick={handleImportJSON}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="JSONインポート"
-              >
-                JSON読込
-              </button>
-              <button
-                onClick={handleExportYAML}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="YAMLエクスポート（人間が読みやすい形式）"
-              >
-                YAML出力
-              </button>
-              <button
-                onClick={handleImportYAML}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="YAMLインポート"
-              >
-                YAML読込
-              </button>
-            </div>
-            {/* Undo/Redoボタン */}
-            <div className="flex items-center gap-1 text-xs">
-              <button
-                onClick={undo}
-                disabled={!canUndo}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="元に戻す (Ctrl+Z)"
-              >
-                ↶ Undo
-              </button>
-              <button
-                onClick={redo}
-                disabled={!canRedo}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="やり直す (Ctrl+Y)"
-              >
-                ↷ Redo
-              </button>
-            </div>
-            {/* エクスポート・印刷ボタン */}
-            <div className="flex items-center gap-1 text-xs">
-              <button
-                onClick={() => handleExportImage("png")}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="PNG画像としてエクスポート"
-              >
-                PNG
-              </button>
-              <button
-                onClick={() => handleExportImage("jpeg")}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="JPEG画像としてエクスポート"
-              >
-                JPEG
-              </button>
-              <button
-                onClick={() => handleExportPDF(false)}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="PDFとしてエクスポート（現在のセット）"
-              >
-                PDF
-              </button>
-              <button
-                onClick={handlePrint}
-                className="px-2 py-1 rounded-md bg-slate-800 border border-slate-600 hover:bg-slate-700 transition-colors"
-                title="印刷"
-              >
-                印刷
-              </button>
-            </div>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <span className="text-xs">コマンド</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-semibold text-slate-400 bg-slate-900 border border-slate-700 rounded">
+                ⌘K
+              </kbd>
+            </button>
+
+            {/* ステータス表示 */}
             <div className="flex items-center gap-2 text-xs">
-              <span className="px-2 py-1 rounded-full bg-emerald-900/40 border border-emerald-500/60">
+              <span className="px-2.5 py-1 rounded-full bg-emerald-900/40 border border-emerald-500/60 text-emerald-200">
                 Members: {isMounted ? members.length : 0}
               </span>
-              <span className="px-2 py-1 rounded-full bg-slate-900/60 border border-slate-600">
+              <span className="px-2.5 py-1 rounded-full bg-slate-900/60 border border-slate-600 text-slate-300">
                 Count: {isMounted ? Math.round(currentCount) : 0}
               </span>
             </div>
           </div>
         </header>
 
-        {/* Note + エディタ + SidePanel */}
-        <section className="flex gap-4">
-          {/* Note */}
-          <div className="w-64 shrink-0 rounded-xl border border-slate-700 bg-slate-800/70 p-3">
-            <h2 className="text-xs font-semibold text-slate-300 mb-1">
-              Set Note
-            </h2>
-            <p className="text-[10px] text-slate-500 mb-2">
-              このセット特有のメモを書いておく欄です。
-            </p>
-            <div className="rounded-lg overflow-hidden border border-slate-700">
-              <NotePanel
-                note={currentSet.note}
-                onChangeNote={handleChangeNote}
+        {/* メインコンテンツエリア（flex、高さ固定） */}
+        <div className="flex-1 flex gap-2 overflow-hidden px-2 py-2">
+          {/* 左サイドバー（コマンド系） */}
+          <div className="w-64 shrink-0 flex flex-col gap-2 overflow-y-auto">
+            {/* Note */}
+            <div className="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+              <h2 className="text-xs font-semibold text-slate-300 mb-1">
+                Set Note
+              </h2>
+              <div className="rounded-lg overflow-hidden border border-slate-700">
+                <NotePanel
+                  note={currentSet.note}
+                  onChangeNote={handleChangeNote}
+                />
+              </div>
+            </div>
+
+            {/* Instructions */}
+            <div className="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
+              <h2 className="text-xs font-semibold text-slate-300 mb-1">
+                Instructions
+              </h2>
+              <div className="rounded-lg overflow-hidden border border-slate-700">
+                <InstructionsPanel
+                  instructions={currentSet.instructions}
+                  onChangeInstructions={handleChangeInstructions}
+                  setName={currentSet.name}
+                />
+              </div>
+            </div>
+
+            {/* DrillControls */}
+            <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3">
+              <DrillControls
+                sets={sets.map((s) => ({
+                  id: s.id,
+                  name: s.name,
+                  startCount: s.startCount,
+                }))}
+                currentSetId={currentSetId}
+                onChangeCurrentSet={(id) => {
+                  clearPlaybackView();
+                  setCurrentSetId(id);
+                  handleSelectBulk([]);
+                }}
+                onAddSet={addSetTail}
+                onDeleteSet={deleteSet}
+                onReorderSet={reorderSet}
+                onArrangeLineSelected={arrangeLineSelected}
+                onStartBezierArc={startBezierArc}
+                onClearBezierArc={clearBezierArc}
+                bezierActive={!!activeArc}
+                onArrangeCircle={arrangeCircle}
+                onArrangeRectangle={arrangeRectangle}
+                onArrangeSpiral={arrangeSpiral}
+                onArrangeBox={arrangeBox}
+                onRotateSelected={rotateSelected}
+                onScaleSelected={scaleSelected}
+                individualPlacementMode={individualPlacementMode}
+                onToggleIndividualPlacement={handleToggleIndividualPlacement}
+                onChangeSetStartCount={handleChangeSetStartCount}
+                snapMode={snapMode}
+                onChangeSnapMode={setSnapMode}
               />
             </div>
           </div>
 
-          {/* 中央（ズーム + Canvas） */}
-          <div className="flex-1 space-y-3">
+          {/* 中央（フィールド） */}
+          <div className="flex-1 flex flex-col gap-2 overflow-hidden">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">
                 ドリルエディタ（DrillEngine駆動）
@@ -627,40 +810,8 @@ export default function DrillPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3 space-y-3">
-              <DrillControls
-                sets={sets.map((s) => ({
-                  id: s.id,
-                  name: s.name,
-                  startCount: s.startCount,
-                }))}
-                currentSetId={currentSetId}
-                onChangeCurrentSet={(id) => {
-                  clearPlaybackView();
-                  setCurrentSetId(id);
-                  handleSelectBulk([]);
-                }}
-                onAddSet={addSetTail}
-                onDeleteSet={deleteSet}
-                onReorderSet={reorderSet}
-                onArrangeLineSelected={arrangeLineSelected}
-                onStartBezierArc={startBezierArc}
-                onClearBezierArc={clearBezierArc}
-                bezierActive={!!activeArc}
-                onArrangeCircle={arrangeCircle}
-                onArrangeRectangle={arrangeRectangle}
-                onArrangeSpiral={arrangeSpiral}
-                onArrangeBox={arrangeBox}
-                onRotateSelected={rotateSelected}
-                onScaleSelected={scaleSelected}
-                individualPlacementMode={individualPlacementMode}
-                onToggleIndividualPlacement={handleToggleIndividualPlacement}
-                onChangeSetStartCount={handleChangeSetStartCount}
-                snapMode={snapMode}
-                onChangeSnapMode={setSnapMode}
-              />
-
-              <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-900 field-canvas-container">
+            {/* フィールドキャンバス */}
+            <div className="flex-1 rounded-xl overflow-hidden border border-slate-700 bg-slate-900 field-canvas-container min-h-0">
                 <FieldCanvas
                   ref={canvasRef}
                   members={members as any}
@@ -685,91 +836,81 @@ export default function DrillPage() {
                   onPlaceMember={handlePlaceMember}
                   placementQueue={placementQueue}
                 />
-              </div>
             </div>
           </div>
 
-          {/* 右パネル（動き方・指示 + メンバー情報） */}
-          <div className="w-80 shrink-0 space-y-4">
-            {/* 動き方・指示パネル */}
-            <InstructionsPanel
-              instructions={currentSet.instructions || ""}
-              onChangeInstructions={handleChangeInstructions}
-              setName={currentSet.name}
-            />
-
-            {/* メンバー情報パネル */}
-            <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3">
-              <h2 className="text-xs font-semibold text-slate-300 mb-2">
-                メンバー情報
-              </h2>
+          {/* 右サイドバー */}
+          <div className="w-64 shrink-0 flex flex-col gap-2 overflow-y-auto">
+            {/* SidePanel */}
+            <div className="rounded-xl border border-slate-700 bg-slate-800/70 p-3">
               <DrillSidePanel
                 members={members as any}
                 selectedIds={selectedIds}
                 currentSetPositions={currentSet.positions}
               />
             </div>
-          </div>
-        </section>
 
-        {/* 3D プレビュー */}
-        <section className="rounded-xl border border-slate-700 bg-slate-800/80 p-3 w-[340px]">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-slate-300">
-              3Dプレビュー
-            </h2>
-            {isRecording3D ? (
-              <button
-                onClick={handleStopRecording}
-                className="px-2 py-1 text-xs rounded-md bg-red-700 text-white hover:bg-red-600 transition-colors"
-                title="録画を停止"
-              >
-                停止
-              </button>
-            ) : (
-              <button
-                onClick={handleRecord3D}
-                disabled={isRecording2D}
-                className="px-2 py-1 text-xs rounded-md bg-red-600 text-white hover:bg-red-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors"
-                title="3D録画（自動的に再生を開始します）"
-              >
-                3D録画
-              </button>
+            {/* 3Dプレビュー */}
+            <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-semibold text-slate-300">3Dプレビュー</h2>
+                {isRecording3D ? (
+                  <button
+                    onClick={handleStopRecording}
+                    className="px-2 py-1 text-xs rounded-md bg-red-700 text-white hover:bg-red-600 transition-colors"
+                    title="録画を停止"
+                  >
+                    停止
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleRecord3D}
+                    disabled={isRecording2D}
+                    className="px-2 py-1 text-xs rounded-md bg-red-600 text-white hover:bg-red-500 disabled:bg-slate-600 disabled:cursor-not-allowed transition-colors"
+                    title="3D録画（自動的に再生を開始します）"
+                  >
+                    3D録画
+                  </button>
+                )}
+              </div>
+              <Drill3DPreview
+                ref={preview3DRef}
+                members={members.map((m) => ({
+                  id: m.id,
+                  name: m.name,
+                  part: m.part,
+                  color: m.color,
+                }))}
+                positions={displayPositions}
+              />
+            </div>
+
+            {/* 音楽同期パネル */}
+            {musicState.isLoaded && (
+              <div className="rounded-xl border border-slate-700 bg-slate-800/80 p-3">
+                <MusicSyncPanel
+                  isLoaded={musicState.isLoaded}
+                  isPlaying={musicState.isPlaying}
+                  currentTime={musicState.currentTime}
+                  duration={musicState.duration}
+                  markers={musicState.markers}
+                  bpm={musicState.bpm}
+                  onLoadMusic={loadMusic}
+                  onPlayMusic={playMusic}
+                  onStopMusic={stopMusic}
+                  onAddMarker={addMarker}
+                  onRemoveMarker={removeMarker}
+                  onSetBPM={setBPM}
+                  onSyncCurrentTime={syncCurrentTime}
+                  currentCount={currentCount}
+                />
+              </div>
             )}
           </div>
-          <div className="bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
-            <Drill3DPreview
-              ref={preview3DRef}
-              members={members as any}
-              positions={displayPositions}
-            />
-          </div>
-        </section>
+        </div>
 
-        {/* 音楽同期パネル */}
-        <section className="w-[340px]">
-          <MusicSyncPanel
-            isLoaded={musicState.isLoaded}
-            isPlaying={musicState.isPlaying}
-            currentTime={musicState.currentTime}
-            duration={musicState.duration}
-            markers={musicState.markers}
-            bpm={musicState.bpm}
-            onLoadMusic={loadMusic}
-            onPlayMusic={playMusic}
-            onStopMusic={stopMusic}
-            onAddMarker={addMarker}
-            onRemoveMarker={removeMarker}
-            onSetBPM={setBPM}
-            onSyncCurrentTime={syncCurrentTime}
-            currentCount={currentCount}
-          />
-        </section>
-      </main>
-
-      {/* 🎹 画面下に固定されたタイムライン（DAW風） */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800 bg-slate-950/95 backdrop-blur px-4 py-2">
-        <div className="max-w-6xl mx-auto">
+        {/* タイムライン（固定、下部） */}
+        <div className="flex-shrink-0 border-t border-slate-800 bg-slate-900 z-10 px-2 py-2">
           <Timeline
             sets={sets.map((s, index) => ({
               id: s.id,
@@ -778,7 +919,7 @@ export default function DrillPage() {
               endCount:
                 index < sets.length - 1
                   ? sets[index + 1].startCount
-                  : s.startCount + 16,
+                  : s.startCount + 32,
             }))}
             playStartId={playStartId}
             playEndId={playEndId}
@@ -786,14 +927,18 @@ export default function DrillPage() {
             onChangePlayEnd={setPlayEndId}
             currentCount={currentCount}
             isPlaying={isPlaying}
-            onScrub={handleScrub}
-            onStartPlay={handleStartPlay}
+            onScrub={(count: number) => {
+              clearPlaybackView();
+              setCountFromMusic(count);
+            }}
+            onStartPlay={() => {
+              handleStartPlay();
+            }}
             onStopPlay={handleStopPlay}
             onAddSetAtCurrent={() => addSetAtCount(currentCount)}
           />
         </div>
       </div>
-    </div>
     </>
   );
 }
