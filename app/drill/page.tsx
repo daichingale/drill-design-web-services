@@ -37,6 +37,7 @@ import { useMusicSync } from "@/hooks/useMusicSync";
 import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
 import CommandPalette, { type Command } from "@/components/drill/CommandPalette";
 import { useMenu } from "@/context/MenuContext";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 // UiSet型はlib/drill/uiTypes.tsからインポートするため、ここでは定義しない
 
@@ -47,7 +48,8 @@ type EditorState = {
 };
 
 export default function DrillPage() {
-  const { members } = useMembers();
+  const { t } = useTranslation();
+  const { members, setMembers } = useMembers();
   const { settings } = useSettings();
   const { setMenuGroups, setOpenCommandPalette } = useMenu();
   const [isMounted, setIsMounted] = useState(false);
@@ -393,7 +395,7 @@ export default function DrillPage() {
     // ファイル操作
     {
       id: "save",
-      label: "保存",
+      label: t("menu.file.save"),
       shortcut: "Ctrl+S",
       icon: "💾",
       group: "file",
@@ -401,7 +403,7 @@ export default function DrillPage() {
     },
     {
       id: "load",
-      label: "読み込み",
+      label: t("menu.file.load"),
       shortcut: "Ctrl+O",
       icon: "📂",
       group: "file",
@@ -410,7 +412,7 @@ export default function DrillPage() {
     // 編集操作
     {
       id: "undo",
-      label: "元に戻す",
+      label: t("menu.edit.undo"),
       shortcut: "Ctrl+Z",
       icon: "↶",
       group: "edit",
@@ -418,7 +420,7 @@ export default function DrillPage() {
     },
     {
       id: "redo",
-      label: "やり直す",
+      label: t("menu.edit.redo"),
       shortcut: "Ctrl+Y",
       icon: "↷",
       group: "edit",
@@ -463,7 +465,7 @@ export default function DrillPage() {
     },
     {
       id: "reset-all",
-      label: "データを全削除",
+      label: t("menu.file.deleteAll"),
       icon: "🗑️",
       group: "file",
       action: () => {
@@ -1146,6 +1148,37 @@ export default function DrillPage() {
                 members={members as any}
                 selectedIds={selectedIds}
                 currentSetPositions={displayPositions}
+                onAddMember={() => {
+                  const newIndex = members.length + 1;
+                  const newId = `M${newIndex}`;
+                  setMembers((prev) => [
+                    ...prev,
+                    {
+                      id: newId,
+                      name: `New Member ${newId}`,
+                      part: "Flute",
+                      color: "#888888",
+                    },
+                  ]);
+                }}
+                onDeleteMember={(id: string) => {
+                  setMembers((prev) => prev.filter((m) => m.id !== id));
+                }}
+                onUpdateMember={(id: string, field: "name" | "part" | "color", value: string) => {
+                  setMembers((prev) =>
+                    prev.map((m) =>
+                      m.id === id
+                        ? {
+                            ...m,
+                            [field]: value,
+                          }
+                        : m
+                    )
+                  );
+                }}
+                onImportMembers={(importedMembers) => {
+                  setMembers(() => importedMembers);
+                }}
               />
               {/* 位置確定ボタン */}
               {pendingPositions && !hasPlayback && (

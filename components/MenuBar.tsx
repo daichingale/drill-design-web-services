@@ -5,17 +5,19 @@ import { useMenu } from "@/context/MenuContext";
 import HeaderMenu from "@/components/drill/HeaderMenu";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 export default function MenuBar() {
   const { menuGroups, openCommandPalette } = useMenu();
   const pathname = usePathname();
+  const { t } = useTranslation();
 
   // 常に表示する「表示」メニュー
   const viewMenuGroup = {
-    label: "表示",
+    label: t("menu.view"),
     items: [
       {
-        label: "コマンドパレット",
+        label: t("menu.view.commandPalette"),
         icon: "🔍",
         shortcut: "Ctrl+K",
         action: () => {
@@ -26,21 +28,14 @@ export default function MenuBar() {
       },
       { divider: true },
       {
-        label: "ドリルエディタ",
+        label: t("menu.view.drillEditor"),
         icon: "🎯",
         action: () => {
           window.location.href = "/drill";
         },
       },
       {
-        label: "メンバー管理",
-        icon: "👥",
-        action: () => {
-          window.location.href = "/members";
-        },
-      },
-      {
-        label: "設定",
+        label: t("menu.view.settings"),
         icon: "⚙️",
         action: () => {
           window.location.href = "/settings";

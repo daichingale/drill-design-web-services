@@ -75,8 +75,8 @@ export default function HeaderMenu({ groups }: HeaderMenuProps) {
                   );
                 }
 
-                // データを全削除の場合は赤字で表示
-                const isDeleteAction = item.label === "データを全削除";
+                // データを全削除の場合は赤字で表示（翻訳キーで判定）
+                const isDeleteAction = item.label === "データを全削除" || item.label === "Delete All Data";
                 
                 return (
                   <button

@@ -6,7 +6,9 @@ import Link from "next/link";
 import { MembersProvider } from "@/context/MembersContext";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { MenuProvider } from "@/context/MenuContext";
+import { I18nProvider } from "@/context/I18nContext";
 import MenuBar from "@/components/MenuBar";
+import LanguageToggle from "@/components/LanguageToggle";
 
 export const metadata: Metadata = {
   title: "Drill Design Web Services",
@@ -18,11 +20,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="ja">
       <body className="min-h-screen bg-slate-900 text-slate-100">
         {/* 全体で共有するコンテキスト */}
-        <SettingsProvider>
-          <MembersProvider>
-            <MenuProvider>
-              {/* メニューバー（固定、最上部） */}
-              <div className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
+        <I18nProvider>
+          <SettingsProvider>
+            <MembersProvider>
+              <MenuProvider>
+                  {/* メニューバー（固定、最上部） */}
+                  <div className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur rounded-b-lg">
                 <div className="mx-auto max-w-full">
                   {/* メニューバー */}
                   <div className="flex items-center justify-between px-4 py-1.5 border-b border-slate-800 bg-slate-900/50">
@@ -40,15 +43,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                       </Link>
                       <MenuBar />
                     </div>
+                    <div className="flex items-center gap-2">
+                      <LanguageToggle />
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* 各ページ本体 */}
-              <main className="mx-auto max-w-[98vw] px-2 py-4">{children}</main>
-            </MenuProvider>
-          </MembersProvider>
-        </SettingsProvider>
+                {/* 各ページ本体 */}
+                <main className="mx-auto max-w-[98vw] px-2 py-4">{children}</main>
+              </MenuProvider>
+            </MembersProvider>
+          </SettingsProvider>
+        </I18nProvider>
       </body>
     </html>
   );

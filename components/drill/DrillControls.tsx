@@ -2,6 +2,7 @@
 "use client";
 
 import { SnapModeToggle, type SnapMode } from "@/components/ui/snap-mode-toggle";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 type SetSummary = {
   id: string;
@@ -80,6 +81,7 @@ export default function DrillControls({
   currentCount,
   onJumpToCount,
 }: Props) {
+  const { t } = useTranslation();
   const currentSet = sets.find((s) => s.id === currentSetId) ?? sets[0];
   
   // 確定済みカウントのナビゲーション
@@ -103,13 +105,13 @@ export default function DrillControls({
     <div className="space-y-4">
       {/* Set 操作（追加など） */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">Set 操作</span>
+        <span className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">{t("set.operations")}</span>
         <button
           type="button"
           onClick={onAddSet}
           className="inline-flex items-center rounded-md bg-gradient-to-r from-emerald-600/80 to-emerald-700/80 hover:from-emerald-600 hover:to-emerald-700 border border-emerald-500/50 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap"
         >
-          ＋ Set 追加（最後尾）
+          ＋ {t("set.add")}
         </button>
       </div>
 
@@ -121,7 +123,7 @@ export default function DrillControls({
         <div className="rounded-lg bg-gradient-to-br from-slate-800/60 to-slate-900/60 border border-slate-700/80 p-4 shadow-lg backdrop-blur-sm">
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400/90 uppercase tracking-wider">現在の Set</span>
+              <span className="text-xs text-slate-400/90 uppercase tracking-wider">{t("set.current")}</span>
               <select
                 className="flex-1 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
                 value={currentSetId}
@@ -138,8 +140,8 @@ export default function DrillControls({
             {/* セット名編集 */}
             {onChangeSetName && (
               <div className="flex items-center gap-2">
-                <label className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">
-                  セット名
+                  <label className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">
+                  {t("set.name")}
                 </label>
                 <input
                   type="text"
@@ -155,11 +157,11 @@ export default function DrillControls({
             {(onCopySet || onCopySelectedMembers) && (
               <div className="space-y-2 pt-2 border-t border-slate-700/60">
                 <span className="text-xs text-slate-400/90 uppercase tracking-wider block">
-                  コピー/ペースト
+                  {t("copyPaste.title")}
                 </span>
                 {onCopySet && (
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400/80 block">セット全体をコピー</label>
+                    <label className="text-[10px] text-slate-400/80 block">{t("copyPaste.copyAll")}</label>
                     <select
                       className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-2 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all duration-200 shadow-inner"
                       onChange={(e) => {
@@ -170,7 +172,7 @@ export default function DrillControls({
                       }}
                       defaultValue=""
                     >
-                      <option value="" className="bg-slate-800">コピー元を選択</option>
+                      <option value="" className="bg-slate-800">{t("set.selectSourceSet")}</option>
                       {sets.filter((s) => s.id !== currentSetId).map((s) => (
                         <option key={s.id} value={s.id} className="bg-slate-800">
                           {s.name}
@@ -181,7 +183,7 @@ export default function DrillControls({
                 )}
                 {onCopySelectedMembers && (
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400/80 block">選択メンバーをコピー</label>
+                    <label className="text-[10px] text-slate-400/80 block">{t("copyPaste.copySelected")}</label>
                     <select
                       className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-2 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all duration-200 shadow-inner"
                       onChange={(e) => {
@@ -192,7 +194,7 @@ export default function DrillControls({
                       }}
                       defaultValue=""
                     >
-                      <option value="" className="bg-slate-800">ペースト先を選択</option>
+                      <option value="" className="bg-slate-800">{t("set.selectTargetSet")}</option>
                       {sets.filter((s) => s.id !== currentSetId).map((s) => (
                         <option key={s.id} value={s.id} className="bg-slate-800">
                           {s.name}
@@ -206,7 +208,7 @@ export default function DrillControls({
 
             <div className="flex items-center gap-2">
               <label className="text-xs text-slate-400/90 uppercase tracking-wider">
-                開始カウント
+                {t("set.startCount")}
               </label>
               <input
                 type="number"
@@ -224,7 +226,7 @@ export default function DrillControls({
             <div className="mt-3 pt-3 border-t border-slate-700/60">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400/90 uppercase tracking-wider">確定済みカウント</span>
+                  <span className="text-xs text-slate-400/90 uppercase tracking-wider">{t("confirmedCounts.navigation")}</span>
                   <select
                     className="flex-1 rounded-md bg-emerald-700/40 hover:bg-emerald-700/60 border border-emerald-500/60 px-3 py-1.5 text-sm text-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
                     value={currentCount !== undefined && confirmedCounts.includes(Math.round(currentCount)) ? Math.round(currentCount) : ""}
@@ -235,7 +237,7 @@ export default function DrillControls({
                       }
                     }}
                   >
-                    <option value="" className="bg-slate-800">選択してください</option>
+                    <option value="" className="bg-slate-800">{t("set.selectSet")}</option>
                     {confirmedCounts.map((count) => (
                       <option key={count} value={count} className="bg-slate-800">
                         Count {count}
@@ -249,7 +251,7 @@ export default function DrillControls({
                     onClick={jumpToPrevConfirmed}
                     disabled={!hasPrevConfirmed}
                     className="px-2.5 py-1.5 text-xs rounded-md bg-emerald-700/40 hover:bg-emerald-700/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 text-emerald-200 hover:text-emerald-100 border border-emerald-500/40 hover:border-emerald-500/60 shadow-sm"
-                    title="前の確定カウントへ"
+                    title={t("set.reorderUp")}
                   >
                     ↑
                   </button>
@@ -258,7 +260,7 @@ export default function DrillControls({
                     onClick={jumpToNextConfirmed}
                     disabled={!hasNextConfirmed}
                     className="px-2.5 py-1.5 text-xs rounded-md bg-emerald-700/40 hover:bg-emerald-700/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 text-emerald-200 hover:text-emerald-100 border border-emerald-500/40 hover:border-emerald-500/60 shadow-sm"
-                    title="次の確定カウントへ"
+                    title={t("set.reorderDown")}
                   >
                     ↓
                   </button>
@@ -281,7 +283,7 @@ export default function DrillControls({
                   onClick={() => onReorderSet(currentSetId, 'up')}
                   disabled={sets.length <= 1 || sets.findIndex((s) => s.id === currentSetId) === 0}
                   className="px-2.5 py-1.5 text-xs rounded-md bg-slate-700/40 hover:bg-slate-700/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 text-slate-200 hover:text-slate-100 border border-slate-600/40 hover:border-slate-500/60 shadow-sm"
-                  title="上に移動"
+                    title={t("set.reorderUp")}
                 >
                   ↑
                 </button>
@@ -290,7 +292,7 @@ export default function DrillControls({
                   onClick={() => onReorderSet(currentSetId, 'down')}
                   disabled={sets.length <= 1 || sets.findIndex((s) => s.id === currentSetId) === sets.length - 1}
                   className="px-2.5 py-1.5 text-xs rounded-md bg-slate-700/40 hover:bg-slate-700/60 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 text-slate-200 hover:text-slate-100 border border-slate-600/40 hover:border-slate-500/60 shadow-sm"
-                  title="下に移動"
+                    title={t("set.reorderDown")}
                 >
                   ↓
                 </button>
@@ -306,9 +308,9 @@ export default function DrillControls({
                 }}
                 disabled={sets.length <= 1}
                 className="px-3 py-1.5 text-xs rounded-md bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-600 hover:to-red-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 text-white border border-red-500/50 shadow-md hover:shadow-lg"
-                title="セットを削除"
+                title={t("set.delete")}
               >
-                削除
+                {t("set.delete")}
               </button>
             )}
           </div>
@@ -317,14 +319,14 @@ export default function DrillControls({
 
       {/* 整列・ベジェ操作 */}
       <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">整列・ベジェ操作</h3>
+        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("arrangement.title")}</h3>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={onArrangeLineSelected}
             className="rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 hover:border-slate-500/60 px-3 py-1.5 text-sm text-slate-200 hover:text-slate-100 transition-all duration-200 shadow-sm hover:shadow whitespace-nowrap"
           >
-            一列整列（ID順）
+            {t("arrangement.lineById")}
           </button>
           {onArrangeLineBySelectionOrder && (
             <button
@@ -332,7 +334,7 @@ export default function DrillControls({
               onClick={onArrangeLineBySelectionOrder}
               className="rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 hover:border-slate-500/60 px-3 py-1.5 text-sm text-slate-200 hover:text-slate-100 transition-all duration-200 shadow-sm hover:shadow whitespace-nowrap"
             >
-              一列整列（選択順）
+              {t("arrangement.lineBySelection")}
             </button>
           )}
           {onReorderSelection && (
@@ -341,7 +343,7 @@ export default function DrillControls({
                 type="button"
                 onClick={() => onReorderSelection('up')}
                 className="rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 hover:border-slate-500/60 px-2.5 py-1.5 text-sm text-slate-200 hover:text-slate-100 transition-all duration-200 shadow-sm hover:shadow"
-                title="選択順を上に移動"
+                title={t("set.reorderUp")}
               >
                 ↑
               </button>
@@ -349,7 +351,7 @@ export default function DrillControls({
                 type="button"
                 onClick={() => onReorderSelection('down')}
                 className="rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 hover:border-slate-500/60 px-2.5 py-1.5 text-sm text-slate-200 hover:text-slate-100 transition-all duration-200 shadow-sm hover:shadow"
-                title="選択順を下に移動"
+                title={t("set.reorderDown")}
               >
                 ↓
               </button>
@@ -365,14 +367,14 @@ export default function DrillControls({
                 : "bg-slate-700/40 hover:bg-slate-700/60 border-slate-600/40 hover:border-slate-500/60 text-slate-200 hover:text-slate-100"
             }`}
           >
-            {bezierActive ? "ベジェアーク解除" : "ベジェアーク整列"}
+            {bezierActive ? t("set.clearBezier") : t("set.startBezier")}
           </button>
         </div>
       </div>
 
       {/* 形状作成 */}
       <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">形状作成</h3>
+        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("set.shapeCreation")}</h3>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -435,7 +437,7 @@ export default function DrillControls({
 
       {/* 変形・回転 */}
       <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">変形・回転</h3>
+        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("set.transform")}</h3>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -481,7 +483,7 @@ export default function DrillControls({
                 : "bg-slate-700/40 hover:bg-slate-700/60 border-slate-600/40 hover:border-slate-500/60 text-slate-200 hover:text-slate-100"
             }`}
           >
-            {individualPlacementMode ? "📍 個別配置モード（ON）" : "📍 個別配置モード"}
+            {individualPlacementMode ? `📍 ${t("set.individualPlacementOn")}` : `📍 ${t("set.individualPlacement")}`}
           </button>
         </div>
         {individualPlacementMode && (

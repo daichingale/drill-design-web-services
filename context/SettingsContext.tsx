@@ -85,6 +85,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
     setSettings((prev) => {
       const newSettings = { ...prev, ...updates };
       saveSettingsToStorage(newSettings);
+      console.log("Settings updated:", newSettings);
       return newSettings;
     });
   }, []);

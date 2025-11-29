@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "@/lib/i18n/useTranslation";
 
 export type Command = {
   id: string;
@@ -42,12 +43,13 @@ export default function CommandPalette({
     {} as Record<string, Command[]>
   );
 
+  const { t } = useTranslation();
   const groupLabels: Record<string, string> = {
-    file: "ファイル",
-    edit: "編集",
-    export: "エクスポート",
-    import: "インポート",
-    view: "表示",
+    file: t("menu.file"),
+    edit: t("menu.edit"),
+    export: t("menu.file.export"),
+    import: t("menu.file.import"),
+    view: t("menu.view"),
   };
 
   useEffect(() => {
@@ -123,7 +125,7 @@ export default function CommandPalette({
                 setSearchQuery(e.target.value);
                 setSelectedIndex(0);
               }}
-              placeholder="コマンドを検索... (例: 保存、エクスポート)"
+              placeholder={t("commandPalette.search")}
               className="flex-1 bg-slate-900/30 border border-slate-600 rounded px-3 py-2 text-slate-100 placeholder:text-slate-500 outline-none text-lg focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
             />
             <kbd className="px-2 py-1 text-xs font-semibold text-slate-400 bg-slate-900/60 border border-slate-700 rounded">
@@ -136,7 +138,7 @@ export default function CommandPalette({
         <div className="max-h-96 overflow-y-auto">
           {filteredCommands.length === 0 ? (
             <div className="p-8 text-center text-slate-400">
-              コマンドが見つかりません
+              {t("commandPalette.noResults")}
             </div>
           ) : (
             Object.entries(groupedCommands).map(([group, cmds]) => (
@@ -181,10 +183,10 @@ export default function CommandPalette({
         {/* フッター */}
         <div className="px-4 py-2 border-t border-slate-700 flex items-center justify-between text-xs text-slate-500">
           <div className="flex items-center gap-4">
-            <span>↑↓ で選択</span>
-            <span>Enter で実行</span>
+            <span>{t("commandPalette.select")}</span>
+            <span>{t("commandPalette.execute")}</span>
           </div>
-          <span>Esc で閉じる</span>
+          <span>{t("commandPalette.close")}</span>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@
 /* Tailwind CSS v4 のインポート */
 @import "tailwindcss";
 
+
 /* Tailwindを優先させるため、最小限のリセットのみ */
 
 *,
