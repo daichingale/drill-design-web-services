@@ -1,8 +1,11 @@
 // components/drill/DrillControls.tsx
 "use client";
 
+import { useState } from "react";
 import { SnapModeToggle, type SnapMode } from "@/components/ui/snap-mode-toggle";
 import { useTranslation } from "@/lib/i18n/useTranslation";
+
+type TabType = "set" | "arrangement";
 
 type SetSummary = {
   id: string;
@@ -101,8 +104,38 @@ export default function DrillControls({
     }
   };
 
+  const [activeTab, setActiveTab] = useState<TabType>("set");
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* タブ */}
+      <div className="flex border-b border-slate-700/60 bg-slate-800/40 shrink-0">
+        <button
+          onClick={() => setActiveTab("set")}
+          className={`flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
+            activeTab === "set"
+              ? "text-emerald-400 border-b-2 border-emerald-400 bg-slate-800/60"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          SET操作
+        </button>
+        <button
+          onClick={() => setActiveTab("arrangement")}
+          className={`flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
+            activeTab === "arrangement"
+              ? "text-emerald-400 border-b-2 border-emerald-400 bg-slate-800/60"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          整列・変形
+        </button>
+      </div>
+
+      {/* コンテンツエリア */}
+      <div className="flex-1 overflow-y-auto sidebar-scrollbar p-4 space-y-4">
+        {activeTab === "set" ? (
+          <>
       {/* Set 操作（追加など） */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">{t("set.operations")}</span>
@@ -316,10 +349,12 @@ export default function DrillControls({
           </div>
         </div>
       )}
-
-      {/* 整列・ベジェ操作 */}
-      <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("arrangement.title")}</h3>
+          </>
+        ) : (
+          <>
+            {/* 整列・ベジェ操作 */}
+            <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
+              <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("arrangement.title")}</h3>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -370,12 +405,12 @@ export default function DrillControls({
             {bezierActive ? t("set.clearBezier") : t("set.startBezier")}
           </button>
         </div>
-      </div>
+            </div>
 
-      {/* 形状作成 */}
-      <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("set.shapeCreation")}</h3>
-        <div className="flex flex-wrap gap-2">
+            {/* 形状作成 */}
+            <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
+              <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("set.shapeCreation")}</h3>
+              <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => {
@@ -432,13 +467,13 @@ export default function DrillControls({
           >
             📦 ボックス
           </button>
-        </div>
-      </div>
+              </div>
+            </div>
 
-      {/* 変形・回転 */}
-      <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("set.transform")}</h3>
-        <div className="flex flex-wrap gap-2">
+            {/* 変形・回転 */}
+            <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
+              <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">{t("set.transform")}</h3>
+              <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => {
@@ -467,29 +502,32 @@ export default function DrillControls({
           >
             🔍 拡大/縮小
           </button>
-        </div>
-      </div>
+              </div>
+            </div>
 
-      {/* 個別配置 */}
-      <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
-        <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">個別配置</h3>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onToggleIndividualPlacement}
-            className={`rounded-md border px-3 py-1.5 text-sm transition-all duration-200 shadow-sm hover:shadow whitespace-nowrap ${
-              individualPlacementMode
-                ? "bg-gradient-to-r from-emerald-600/90 to-emerald-700/90 hover:from-emerald-600 hover:to-emerald-700 border-emerald-500/60 text-white"
-                : "bg-slate-700/40 hover:bg-slate-700/60 border-slate-600/40 hover:border-slate-500/60 text-slate-200 hover:text-slate-100"
-            }`}
-          >
-            {individualPlacementMode ? `📍 ${t("set.individualPlacementOn")}` : `📍 ${t("set.individualPlacement")}`}
-          </button>
-        </div>
-        {individualPlacementMode && (
-          <p className="text-[10px] text-slate-400/80 mt-2 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/30">
-            フィールドをクリックすると、選択されたメンバーを順番に配置します。
-          </p>
+            {/* 個別配置 */}
+            <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
+              <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">個別配置</h3>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onToggleIndividualPlacement}
+                  className={`rounded-md border px-3 py-1.5 text-sm transition-all duration-200 shadow-sm hover:shadow whitespace-nowrap ${
+                    individualPlacementMode
+                      ? "bg-gradient-to-r from-emerald-600/90 to-emerald-700/90 hover:from-emerald-600 hover:to-emerald-700 border-emerald-500/60 text-white"
+                      : "bg-slate-700/40 hover:bg-slate-700/60 border-slate-600/40 hover:border-slate-500/60 text-slate-200 hover:text-slate-100"
+                  }`}
+                >
+                  {individualPlacementMode ? `📍 ${t("set.individualPlacementOn")}` : `📍 ${t("set.individualPlacement")}`}
+                </button>
+              </div>
+              {individualPlacementMode && (
+                <p className="text-[10px] text-slate-400/80 mt-2 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/30">
+                  フィールドをクリックすると、選択されたメンバーを順番に配置します。
+                </p>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

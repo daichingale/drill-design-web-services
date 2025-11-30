@@ -1,7 +1,7 @@
 // app/drill/page.tsx
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useMembers } from "@/context/MembersContext";
 import { useSettings } from "@/context/SettingsContext";
 import { STEP_M } from "@/lib/drill/utils";
@@ -61,18 +61,144 @@ export default function DrillPage() {
   const [drillTitle, setDrillTitle] = useState<string>("");
   const [drillDataName, setDrillDataName] = useState<string>("");
   const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
+  const [drillDbId, setDrillDbId] = useState<string | null>(null); // データベースのドリルID
 
   // クライアント側でのみマウントされたことを確認
   useEffect(() => {
     setIsMounted(true);
     
-    // メタデータを読み込み
-    const metadata = loadDrillMetadata();
-    if (metadata) {
-      setDrillTitle(metadata.title || "");
-      setDrillDataName(metadata.dataName || "");
+    // URLパラメータからドリルIDを取得
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+    
+    if (id) {
+      // データベースからドリルを読み込む
+      loadDrillFromDatabase(id);
+      setDrillDbId(id);
+    } else {
+      // ローカルストレージからメタデータを読み込み
+      const metadata = loadDrillMetadata();
+      if (metadata) {
+        setDrillTitle(metadata.title || "");
+        setDrillDataName(metadata.dataName || "");
+      }
     }
   }, []);
+
+  // データベースからドリルを読み込む
+  const loadDrillFromDatabase = async (id: string) => {
+    try {
+      console.log("[Load] Loading drill from database, ID:", id);
+      const response = await fetch(`/api/drills/${id}`);
+      
+      console.log("[Load] Response status:", response.status);
+      console.log("[Load] Response ok:", response.ok);
+      
+      if (!response.ok) {
+        let errorMessage = "Failed to load drill";
+        let errorData: any = {};
+        
+        try {
+          const contentType = response.headers.get("content-type");
+          const isJSON = contentType && contentType.includes("application/json");
+          
+          if (isJSON) {
+            errorData = await response.json();
+            errorMessage = errorData.error || errorData.message || errorMessage;
+            console.error("[Load] Error response:", JSON.stringify(errorData, null, 2));
+            console.error("[Load] Error message:", errorData.message);
+            console.error("[Load] Error details:", errorData.details);
+          } else {
+            const text = await response.text();
+            console.error("[Load] Error response text:", text.substring(0, 500));
+            errorMessage = text || `HTTP ${response.status}: ${response.statusText}`;
+          }
+        } catch (e) {
+          console.error("[Load] Failed to parse error response:", e);
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      const data = await response.json();
+      console.log("[Load] Drill data received:", {
+        id: data.id,
+        title: data.title,
+        setsCount: data.sets?.length || 0,
+        membersCount: data.members?.length || 0,
+      });
+      
+      if (!data.sets || !Array.isArray(data.sets)) {
+        throw new Error("Invalid drill data: sets is missing or not an array");
+      }
+      
+      if (!data.members || !Array.isArray(data.members)) {
+        throw new Error("Invalid drill data: members is missing or not an array");
+      }
+      
+      // ドリルデータを復元
+      restoreState(data.sets, [], data.sets[0]?.id || "");
+      setMembers(data.members);
+      setDrillTitle(data.title || "");
+      setDrillDataName(data.dataName || "");
+      console.log("[Load] Drill loaded successfully");
+    } catch (error) {
+      console.error("[Load] Error loading drill from database:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error("[Load] Full error:", error);
+      alert(`ドリルの読み込みに失敗しました: ${errorMessage}`);
+    }
+  };
+
+  // データベースにドリルを保存
+  const saveDrillToDatabase = async () => {
+    try {
+      const payload = {
+        title: drillTitle || "無題",
+        dataName: drillDataName || "",
+        sets,
+        members,
+      };
+
+      if (drillDbId) {
+        // 既存のドリルを更新
+        const response = await fetch(`/api/drills/${drillDbId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to update drill");
+        }
+      } else {
+        // 新規ドリルを作成
+        const response = await fetch("/api/drills", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to create drill");
+        }
+
+        const data = await response.json();
+        setDrillDbId(data.id);
+        
+        // URLを更新（リロードしない）
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set("id", data.id);
+        window.history.pushState({}, "", newUrl.toString());
+      }
+
+      alert("データベースに保存しました");
+    } catch (error) {
+      console.error("Error saving drill to database:", error);
+      alert("データベースへの保存に失敗しました");
+    }
+  };
 
   // メニューグループを登録（後で定義されるmenuGroupsを使用）
 
@@ -241,12 +367,87 @@ export default function DrillPage() {
   };
 
   // ===== ズーム機能 =====
+  // デフォルトスケールを計算（グリッド全体が見えるように）
+  // コンテナの実際のサイズに基づいて動的に計算
+  const [defaultScale, setDefaultScale] = useState(1);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const calculateDefaultScale = () => {
+      if (!canvasContainerRef.current || typeof window === "undefined") {
+        // フォールバック: 画面サイズから推定
+        const canvasWidth = 700;
+        const canvasHeight = 560;
+        const estimatedWidth = Math.min(window.innerWidth * 0.8, 1400);
+        const estimatedHeight = window.innerHeight * 0.6;
+        const scaleByWidth = (estimatedWidth - 40) / canvasWidth;
+        const scaleByHeight = (estimatedHeight - 40) / canvasHeight;
+        const calculatedScale = Math.min(scaleByWidth, scaleByHeight) * 0.9;
+        setDefaultScale(Math.min(Math.max(calculatedScale, 0.3), 1.5));
+        return;
+      }
+      
+      const container = canvasContainerRef.current;
+      const containerWidth = container.clientWidth || container.offsetWidth;
+      const containerHeight = container.clientHeight || container.offsetHeight;
+      
+      // コンテナサイズが取得できない場合はフォールバック
+      if (containerWidth === 0 || containerHeight === 0) {
+        const canvasWidth = 700;
+        const canvasHeight = 560;
+        const estimatedWidth = Math.min(window.innerWidth * 0.8, 1400);
+        const estimatedHeight = window.innerHeight * 0.6;
+        const scaleByWidth = (estimatedWidth - 40) / canvasWidth;
+        const scaleByHeight = (estimatedHeight - 40) / canvasHeight;
+        const calculatedScale = Math.min(scaleByWidth, scaleByHeight) * 0.9;
+        setDefaultScale(Math.min(Math.max(calculatedScale, 0.3), 1.5));
+        return;
+      }
+      
+      const canvasWidth = 700;
+      const canvasHeight = 560; // 40/50 * 700
+      
+      // 余白を考慮
+      const padding = 40;
+      const availableWidth = containerWidth - padding;
+      const availableHeight = containerHeight - padding;
+      
+      // 幅と高さの両方を考慮して、小さい方のスケールを使用
+      const scaleByWidth = availableWidth / canvasWidth;
+      const scaleByHeight = availableHeight / canvasHeight;
+      const calculatedScale = Math.min(scaleByWidth, scaleByHeight);
+      
+      // 0.3倍から1.5倍の範囲に制限（余裕を持たせるため0.9を掛ける）
+      const finalScale = Math.min(Math.max(calculatedScale * 0.9, 0.3), 1.5);
+      setDefaultScale(finalScale);
+    };
+
+    // 少し遅延させてコンテナのサイズが確定するのを待つ
+    const timeoutId = setTimeout(calculateDefaultScale, 100);
+    
+    // ウィンドウサイズ変更時にも再計算
+    window.addEventListener('resize', calculateDefaultScale);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', calculateDefaultScale);
+    };
+  }, [isMounted]); // isMountedがtrueになってから実行
+
   const {
     canvasScale,
     handleZoomIn,
     handleZoomOut,
     handleZoomReset,
-  } = useCanvasZoom(1);
+    setZoom,
+  } = useCanvasZoom(defaultScale);
+
+  // デフォルトスケールが計算されたら、それを適用
+  useEffect(() => {
+    if (defaultScale !== 1 && canvasScale === 1) {
+      setZoom(defaultScale);
+    }
+  }, [defaultScale, canvasScale, setZoom]);
 
   const hasPlayback = Object.keys(playbackPositions).length > 0;
   // 一時的な位置がある場合はそれを優先、なければ通常の位置を使用
@@ -402,6 +603,21 @@ export default function DrillPage() {
       action: handleSave,
     },
     {
+      id: "save-db",
+      label: "データベースに保存",
+      shortcut: "Ctrl+Shift+S",
+      icon: "💾",
+      group: "file",
+      action: saveDrillToDatabase,
+    },
+    {
+      id: "drills-list",
+      label: "ドリル一覧",
+      icon: "📋",
+      group: "file",
+      action: () => window.location.href = "/drills",
+    },
+    {
       id: "load",
       label: t("menu.file.load"),
       shortcut: "Ctrl+O",
@@ -514,16 +730,27 @@ export default function DrillPage() {
       label: "ファイル",
       items: [
         {
-          label: "保存",
+          label: "保存（ローカル）",
           icon: "💾",
           shortcut: "Ctrl+S",
           action: handleSave,
+        },
+        {
+          label: "データベースに保存",
+          icon: "💾",
+          shortcut: "Ctrl+Shift+S",
+          action: saveDrillToDatabase,
         },
         {
           label: "読み込み",
           icon: "📂",
           shortcut: "Ctrl+O",
           action: handleLoad,
+        },
+        {
+          label: "ドリル一覧",
+          icon: "📋",
+          action: () => window.location.href = "/drills",
         },
         { divider: true },
         {
@@ -779,10 +1006,17 @@ export default function DrillPage() {
         return;
       }
 
-      // Ctrl/Cmd + S : 保存
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      // Ctrl/Cmd + S : 保存（ローカル）
+      if ((e.ctrlKey || e.metaKey) && e.key === "s" && !e.shiftKey) {
         e.preventDefault();
         handleSave();
+        return;
+      }
+
+      // Ctrl/Cmd + Shift + S : データベースに保存
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "S") {
+        e.preventDefault();
+        saveDrillToDatabase();
         return;
       }
 
@@ -977,9 +1211,9 @@ export default function DrillPage() {
         {/* メインコンテンツエリア（flex、高さ固定） */}
         <div className="flex-1 flex gap-3 overflow-hidden px-3 py-3 max-md:px-1 max-md:py-1">
           {/* 左サイドバー（コマンド系） */}
-          <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar max-md:hidden">
+          <div className="w-64 shrink-0 flex flex-col gap-3 overflow-hidden max-md:hidden">
             {/* DrillControls */}
-            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-4 shadow-xl">
+            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl overflow-hidden flex flex-col h-full">
               <DrillControls
                 sets={sets.map((s) => ({
                   id: s.id,
@@ -1057,62 +1291,11 @@ export default function DrillPage() {
 
           {/* 中央（フィールド） */}
           <div className="flex-1 flex flex-col gap-3 overflow-hidden items-center max-md:gap-1">
-              <div className="flex items-center justify-between px-1 w-full max-w-[1400px] max-md:px-2">
-              <h2 className="text-base font-semibold text-slate-200 uppercase tracking-wider">
-                ドリルエディタ
-              </h2>
-              <div className="flex items-center gap-2">
-                {/* 2D録画ボタン */}
-                <button
-                  onClick={handleRecord2D}
-                  disabled={isRecording2D || isRecording3D}
-                  className="px-3 py-1.5 text-xs rounded-md bg-gradient-to-r from-red-600/90 to-red-700/90 hover:from-red-600 hover:to-red-700 text-white disabled:from-slate-700/30 disabled:to-slate-700/30 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-200 border border-red-500/50 shadow-md hover:shadow-lg disabled:shadow-none"
-                  title="2D録画（自動的に再生を開始します）"
-                >
-                  {isRecording2D ? "録画中..." : "2D録画"}
-                </button>
-                {/* ズーム */}
-                <div className="flex items-center gap-1.5 text-xs">
-                <span className="mr-1 text-slate-400/90 text-[10px] uppercase tracking-wider">Zoom</span>
-                <button
-                  type="button"
-                  onClick={handleZoomOut}
-                  className="px-2.5 py-1.5 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 hover:border-slate-500/60 text-slate-300 hover:text-slate-100 transition-all duration-200 shadow-sm"
-                >
-                  −
-                </button>
-                <span className="px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded-md min-w-[60px] text-center text-slate-200 font-medium shadow-inner">
-                  {Math.round(canvasScale * 100)}%
-                </span>
-                <button
-                  type="button"
-                  onClick={handleZoomIn}
-                  className="px-2 py-1 rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 transition-colors"
-                >
-                  ＋
-                </button>
-                <button
-                  type="button"
-                  onClick={handleZoomReset}
-                  className="ml-1 px-2 py-1 text-[10px] rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 transition-colors"
-                >
-                  Reset
-                </button>
-              </div>
-              {/* ステータス表示 */}
-              <div className="flex items-center gap-2 text-xs ml-2">
-                <span className="px-2.5 py-1 rounded-full bg-emerald-900/40 border border-emerald-500/60 text-emerald-200">
-                  Members: {isMounted ? members.length : 0}
-                </span>
-                <span className="px-2.5 py-1 rounded-full bg-slate-900/60 border border-slate-600 text-slate-300">
-                  Count: {isMounted ? Math.round(currentCount) : 0}
-                </span>
-              </div>
-              </div>
-            </div>
-
             {/* フィールドキャンバス */}
-            <div className="flex-1 rounded-lg overflow-hidden border border-slate-700/80 bg-gradient-to-br from-slate-900/80 to-slate-950/80 backdrop-blur-sm field-canvas-container min-h-0 shadow-xl w-full max-w-[1400px]">
+            <div 
+              ref={canvasContainerRef}
+              className="flex-1 rounded-lg overflow-auto border border-slate-700/80 field-canvas-container shadow-xl w-full max-w-[1400px] bg-transparent flex items-center justify-center"
+            >
                 <FieldCanvas
                   ref={canvasRef}
                   members={members as any}
@@ -1141,9 +1324,67 @@ export default function DrillPage() {
           </div>
 
           {/* 右サイドバー */}
-          <div className="w-56 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar max-md:hidden">
+          <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar max-md:hidden">
+            {/* ヘッダー部分（ドリルエディタ、2D録画、ズーム、メンバー、カウント） */}
+            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-3 shadow-xl space-y-3 shrink-0">
+              <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">
+                ドリルエディタ
+              </h2>
+              
+              {/* 2D録画ボタン */}
+              <button
+                onClick={handleRecord2D}
+                disabled={isRecording2D || isRecording3D}
+                className="w-full px-3 py-2 text-xs rounded-md bg-gradient-to-r from-red-600/90 to-red-700/90 hover:from-red-600 hover:to-red-700 text-white disabled:from-slate-700/30 disabled:to-slate-700/30 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-200 border border-red-500/50 shadow-md hover:shadow-lg disabled:shadow-none"
+                title="2D録画（自動的に再生を開始します）"
+              >
+                {isRecording2D ? "録画中..." : "2D録画"}
+              </button>
+              
+              {/* ズーム */}
+              <div className="space-y-1.5">
+                <div className="text-xs text-slate-400/90 uppercase tracking-wider">Zoom</div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleZoomOut}
+                    className="px-2.5 py-1.5 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 hover:border-slate-500/60 text-slate-300 hover:text-slate-100 transition-all duration-200 shadow-sm text-sm"
+                  >
+                    −
+                  </button>
+                  <span className="flex-1 px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded-md text-center text-slate-200 font-medium shadow-inner text-xs">
+                    {Math.round(canvasScale * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleZoomIn}
+                    className="px-2 py-1 rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 transition-colors text-sm"
+                  >
+                    ＋
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleZoomReset}
+                    className="px-2 py-1 text-[10px] rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              
+              {/* ステータス表示 */}
+              <div className="flex flex-col gap-2 text-xs">
+                <div className="px-2.5 py-1.5 rounded-md bg-emerald-900/40 border border-emerald-500/60 text-emerald-200 text-center">
+                  Members: {isMounted ? members.length : 0}
+                </div>
+                <div className="px-2.5 py-1.5 rounded-md bg-slate-900/60 border border-slate-600 text-slate-300 text-center">
+                  Count: {isMounted ? Math.round(currentCount) : 0}
+                </div>
+              </div>
+            </div>
+
             {/* SidePanel */}
-            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl overflow-hidden">
+            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl overflow-hidden flex flex-col shrink-0">
               <DrillSidePanel
                 members={members as any}
                 selectedIds={selectedIds}

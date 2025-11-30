@@ -87,9 +87,9 @@ export default function DrillSidePanel({
   };
 
   return (
-    <div className="min-w-[200px] rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl overflow-hidden flex flex-col">
+    <div className="w-full flex flex-col min-h-[400px]">
       {/* タブ */}
-      <div className="flex border-b border-slate-700/60 bg-slate-800/40">
+      <div className="flex border-b border-slate-700/60 bg-slate-800/40 shrink-0">
         <button
           onClick={() => setActiveTab("selection")}
           className={`flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
@@ -124,11 +124,36 @@ export default function DrillSidePanel({
                 const member = members.find((m) => m.id === singleSelectedId);
                 const pos = currentSetPositions[singleSelectedId];
 
-                if (!member || !pos) {
+                if (!member) {
                   return (
-                    <p className="text-slate-400 text-sm">
-                      座標情報が見つかりません。
-                    </p>
+                    <div className="p-4 rounded-md bg-slate-800/30 border border-slate-700/40 border-dashed">
+                      <p className="text-slate-400 text-sm text-center">
+                        メンバー情報が見つかりません。
+                      </p>
+                    </div>
+                  );
+                }
+
+                if (!pos) {
+                  return (
+                    <div className="text-sm space-y-3 text-slate-200">
+                      <div className="p-2.5 rounded-md bg-slate-800/40 border border-slate-700/40">
+                        <p className="text-xs text-slate-400/90 mb-1 uppercase tracking-wider">ID</p>
+                        <p className="font-mono text-slate-200">{member.id}</p>
+                      </div>
+                      <div className="p-2.5 rounded-md bg-slate-800/40 border border-slate-700/40">
+                        <p className="text-xs text-slate-400/90 mb-1 uppercase tracking-wider">名前</p>
+                        <p className="text-slate-200">{member.name}</p>
+                      </div>
+                      <div className="p-2.5 rounded-md bg-slate-800/40 border border-slate-700/40">
+                        <p className="text-xs text-slate-400/90 mb-1 uppercase tracking-wider">パート</p>
+                        <p className="text-slate-200">{member.part}</p>
+                      </div>
+                      <div className="p-2.5 rounded-md bg-slate-800/40 border border-slate-700/40">
+                        <p className="text-xs text-slate-400/90 mb-1 uppercase tracking-wider">座標</p>
+                        <p className="text-slate-400/70 text-xs">未配置</p>
+                      </div>
+                    </div>
                   );
                 }
 

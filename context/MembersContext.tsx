@@ -17,7 +17,7 @@ export type Member = {
 
 type MembersContextType = {
   members: Member[];
-  setMembers: (fn: (prev: Member[]) => Member[]) => void;
+  setMembers: (fnOrValue: ((prev: Member[]) => Member[]) | Member[]) => void;
 };
 
 const MembersContext = createContext<MembersContextType | null>(null);
@@ -41,8 +41,12 @@ export const MembersProvider = ({ children }: { children: React.ReactNode }) => 
     ];
   });
 
-  const setMembers = (fn: (prev: Member[]) => Member[]) => {
-    setMembersState((prev) => fn(prev));
+  const setMembers = (fnOrValue: (prev: Member[]) => Member[] | Member[]) => {
+    if (typeof fnOrValue === "function") {
+      setMembersState((prev) => fnOrValue(prev));
+    } else {
+      setMembersState(fnOrValue);
+    }
   };
 
   // 自動保存（メンバーが変更されたら2秒後に保存）

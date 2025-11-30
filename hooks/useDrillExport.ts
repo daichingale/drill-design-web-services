@@ -17,6 +17,7 @@ import {
 import { downloadImage, exportSetsToPDF, printCurrentSet, printSelectedSets } from "@/lib/drill/export";
 import { exportSetWithInfo } from "@/lib/drill/imageExport";
 import type { WorldPos } from "@/lib/drill/types";
+import { useSettings } from "@/context/SettingsContext";
 
 type UseDrillExportParams = {
   sets: UiSet[];
@@ -41,6 +42,7 @@ export function useDrillExport({
   setCurrentSetId,
   getSetPositions,
 }: UseDrillExportParams) {
+  const { settings, updateSettings } = useSettings();
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [pendingExportType, setPendingExportType] = useState<"image" | "pdf" | "print" | null>(null);
   const [pendingImageFormat, setPendingImageFormat] = useState<"png" | "jpeg">("png");
@@ -72,7 +74,7 @@ export function useDrillExport({
   }, [restoreState, isRestoringRef]);
 
   const handleExportJSON = useCallback(() => {
-    const json = exportDrillToJSON(sets);
+    const json = exportDrillToJSON(sets, settings);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -82,7 +84,7 @@ export function useDrillExport({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [sets]);
+  }, [sets, settings]);
 
   const handleImportJSON = useCallback(() => {
     const input = document.createElement("input");
@@ -95,12 +97,16 @@ export function useDrillExport({
       const reader = new FileReader();
       reader.onload = (event) => {
         const jsonString = event.target?.result as string;
-        const importedSets = importDrillFromJSON(jsonString);
+        const result = importDrillFromJSON(jsonString);
         
-        if (importedSets && importedSets.length > 0) {
+        if (result && result.sets && result.sets.length > 0) {
           if (confirm("現在のデータを上書きしますか？")) {
             isRestoringRef.current = true;
-            restoreState(importedSets, [], importedSets[0]?.id || "");
+            // 設定を復元
+            if (result.settings) {
+              updateSettings(result.settings);
+            }
+            restoreState(result.sets, [], result.sets[0]?.id || "");
             setTimeout(() => {
               isRestoringRef.current = false;
             }, 0);
@@ -113,11 +119,11 @@ export function useDrillExport({
       reader.readAsText(file);
     };
     input.click();
-  }, [restoreState, isRestoringRef]);
+  }, [restoreState, isRestoringRef, updateSettings]);
 
   // YAMLエクスポート
   const handleExportYAML = useCallback(() => {
-    const yamlString = exportDrillToYAML(sets);
+    const yamlString = exportDrillToYAML(sets, settings);
     const blob = new Blob([yamlString], { type: "text/yaml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -127,7 +133,7 @@ export function useDrillExport({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [sets]);
+  }, [sets, settings]);
 
   // YAMLインポート
   const handleImportYAML = useCallback(() => {
@@ -141,12 +147,16 @@ export function useDrillExport({
       const reader = new FileReader();
       reader.onload = (event) => {
         const yamlString = event.target?.result as string;
-        const importedSets = importDrillFromYAML(yamlString);
+        const result = importDrillFromYAML(yamlString);
         
-        if (importedSets && importedSets.length > 0) {
+        if (result && result.sets && result.sets.length > 0) {
           if (confirm("現在のデータを上書きしますか？")) {
             isRestoringRef.current = true;
-            restoreState(importedSets, [], importedSets[0]?.id || "");
+            // 設定を復元
+            if (result.settings) {
+              updateSettings(result.settings);
+            }
+            restoreState(result.sets, [], result.sets[0]?.id || "");
             setTimeout(() => {
               isRestoringRef.current = false;
             }, 0);
@@ -159,7 +169,7 @@ export function useDrillExport({
       reader.readAsText(file);
     };
     input.click();
-  }, [restoreState, isRestoringRef]);
+  }, [restoreState, isRestoringRef, updateSettings]);
 
   // 画像エクスポート（オプション選択後）
   const handleExportImageWithOptions = useCallback(

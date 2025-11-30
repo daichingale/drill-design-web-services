@@ -85,7 +85,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
     [fieldHeight, CANVAS_HEIGHT_PX]
   );
 
-  // 座標変換関数
+  // 座標変換関数（フィールドの左上が(0,0)の座標系）
   const worldToCanvas = useMemo(
     () => (pos: WorldPos) => ({
       x: pos.x * baseScaleX,
@@ -182,7 +182,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
   const scaledHeight = CANVAS_HEIGHT_PX * scale;
 
   return (
-    <div className="w-full h-full flex items-center justify-center overflow-hidden">
+    <div className="w-full h-full flex items-center justify-center" style={{ minHeight: `${CANVAS_HEIGHT_PX * scale}px`, minWidth: `${CANVAS_WIDTH_PX * scale}px` }}>
       <div
         style={{
           transform: `scale(${scale})`,
@@ -197,6 +197,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
           height={CANVAS_HEIGHT_PX}
           scaleX={1}
           scaleY={1}
+          style={{ backgroundColor: "#ffffff" }}
       // ===== 個別配置モード用クリックハンドラ =====
       onClick={(e: any) => {
         // 個別配置モードの場合、フィールドをクリックしたらメンバーを配置
@@ -303,62 +304,19 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
       }}
     >
       <Layer>
-        {/* フィールド背景 */}
+        {/* フィールド背景 - 一番後ろに配置 */}
         {!backgroundTransparent && (
           <Rect
             x={0}
             y={0}
             width={CANVAS_WIDTH_PX}
             height={CANVAS_HEIGHT_PX}
-            fill={backgroundColor}
+            fill="#ffffff"
+            listening={false}
           />
         )}
 
-        {/* グリッド（縦線） */}
-        {showGrid &&
-          Array.from({ length: Math.floor(totalStepsX / gridInterval) + 1 }).map((_, i) => {
-            const stepIndex = i * gridInterval;
-            const x = stepIndex * stepPxX;
-            const isBold = stepIndex % 8 === 0;
-            // 中央の線（x軸）は後で別途描画するのでスキップ
-            const centerStep = totalStepsX / 2;
-            const isCenterLine = Math.abs(stepIndex - centerStep) < 0.1; // 中央の線はスキップ
-
-            if (isCenterLine) return null;
-
-            return (
-              <Line
-                key={`v-${i}`}
-                points={[x, 0, x, CANVAS_HEIGHT_PX]}
-                stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
-                strokeWidth={isBold ? 2 : 0.5}
-              />
-            );
-          })}
-
-        {/* グリッド（横線） */}
-        {showGrid &&
-          Array.from({ length: Math.floor(totalStepsY / gridInterval) + 1 }).map((_, i) => {
-            const stepIndex = i * gridInterval;
-            const y = stepIndex * stepPxY;
-            const isBold = stepIndex % 8 === 0;
-            // 中央の線（y軸）は後で別途描画するのでスキップ
-            const centerStep = totalStepsY / 2;
-            const isCenterLine = Math.abs(stepIndex - centerStep) < 0.1; // 中央の線はスキップ
-
-            if (isCenterLine) return null;
-
-            return (
-              <Line
-                key={`h-${i}`}
-                points={[0, y, CANVAS_WIDTH_PX, y]}
-                stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
-                strokeWidth={isBold ? 2 : 0.5}
-              />
-            );
-          })}
-        
-        {/* 30m×30mの正方形の枠（黒い太線） */}
+        {/* 30m×30mの正方形の枠（黒い太線） - 背景の上 */}
         {/* 真ん中から上下左右に3ポイント（24ステップ）= 30m */}
         {(() => {
           const centerX = CANVAS_WIDTH_PX / 2;
@@ -378,23 +336,26 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
               stroke="#000000"
               strokeWidth={3}
               closed={true}
+              listening={false}
             />
           );
         })()}
         
-        {/* 中央の十字（濃く表示） */}
+        {/* 中央の十字（濃く表示） - 背景の上 */}
         <Line
           points={[CANVAS_WIDTH_PX / 2, 0, CANVAS_WIDTH_PX / 2, CANVAS_HEIGHT_PX]}
           stroke="#1e293b"
           strokeWidth={4}
+          listening={false}
         />
         <Line
           points={[0, CANVAS_HEIGHT_PX / 2, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX / 2]}
           stroke="#1e293b"
           strokeWidth={4}
+          listening={false}
         />
 
-        {/* 外枠 */}
+        {/* 外枠 - 背景の上 */}
         <Line
           points={[
             0,
@@ -408,11 +369,14 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             0,
             0,
           ]}
-          stroke="#475569"
+          stroke="#1e293b"
           strokeWidth={2}
+          closed={true}
+          listening={false}
         />
 
-        {/* ベジェアークのコントロール表示（既存のまま） */}
+
+        {/* ベジェアークのコントロール表示 */}
         {activeArc &&
           !isPlaying &&
           (() => {
@@ -898,6 +862,62 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             </Group>
           );
         })()}
+
+        {/* グリッド（縦線） - グリッドは一番前に配置 */}
+        {showGrid &&
+          (() => {
+            const lines = [];
+            // フィールド全体をカバーするように、0からCANVAS_WIDTH_PXまでグリッド線を描画
+            const maxX = CANVAS_WIDTH_PX;
+            for (let x = 0; x <= maxX; x += stepPxX * gridInterval) {
+              const stepIndex = Math.round(x / stepPxX);
+              const isBold = stepIndex % 8 === 0;
+              // 中央の線（x軸）は後で別途描画するのでスキップ
+              const centerX = CANVAS_WIDTH_PX / 2;
+              const isCenterLine = Math.abs(x - centerX) < stepPxX / 2; // 中央の線はスキップ
+
+              if (isCenterLine) continue;
+
+              lines.push(
+                <Line
+                  key={`v-${stepIndex}`}
+                  points={[x, 0, x, CANVAS_HEIGHT_PX]}
+                  stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
+                  strokeWidth={isBold ? 2 : 0.5}
+                  listening={false}
+                />
+              );
+            }
+            return lines;
+          })()}
+
+        {/* グリッド（横線） - グリッドは一番前に配置 */}
+        {showGrid &&
+          (() => {
+            const lines = [];
+            // フィールド全体をカバーするように、0からCANVAS_HEIGHT_PXまでグリッド線を描画
+            const maxY = CANVAS_HEIGHT_PX;
+            for (let y = 0; y <= maxY; y += stepPxY * gridInterval) {
+              const stepIndex = Math.round(y / stepPxY);
+              const isBold = stepIndex % 8 === 0;
+              // 中央の線（y軸）は後で別途描画するのでスキップ
+              const centerY = CANVAS_HEIGHT_PX / 2;
+              const isCenterLine = Math.abs(y - centerY) < stepPxY / 2; // 中央の線はスキップ
+
+              if (isCenterLine) continue;
+
+              lines.push(
+                <Line
+                  key={`h-${stepIndex}`}
+                  points={[0, y, CANVAS_WIDTH_PX, y]}
+                  stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
+                  strokeWidth={isBold ? 2 : 0.5}
+                  listening={false}
+                />
+              );
+            }
+            return lines;
+          })()}
       </Layer>
     </Stage>
       </div>
