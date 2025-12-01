@@ -16,6 +16,8 @@ export type MusicSyncState = {
   duration: number; // 音楽の長さ（秒）
   markers: MusicSyncMarker[];
   bpm: number | null; // BPM（自動検出または手動設定）
+  fileName?: string | null; // 読み込んだ音楽ファイル名
+  audioStream?: MediaStream | null; // 録画用にミックスされたオーディオストリーム
 };
 
 export function useMusicSync() {
@@ -26,11 +28,13 @@ export function useMusicSync() {
     duration: 0,
     markers: [],
     bpm: null,
+    fileName: null,
+    audioStream: null,
   });
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const startTimeRef = useRef<number>(0);
   const pausedTimeRef = useRef<number>(0);
   const lastMarkerCountRef = useRef<number | null>(null); // 最後に追加したマーカーのカウント
@@ -40,26 +44,68 @@ export function useMusicSync() {
     try {
       const url = URL.createObjectURL(file);
       const audio = new Audio(url);
-      
+
       await new Promise<void>((resolve, reject) => {
         audio.onloadedmetadata = () => {
           setState((prev) => ({
             ...prev,
             isLoaded: true,
             duration: audio.duration,
+            fileName: file.name,
+            audioStream: prev.audioStream ?? null,
           }));
           audioRef.current = audio;
           resolve();
         };
-        audio.onerror = reject;
+        audio.onerror = (e) => {
+          // 一部ブラウザで、以前のオーディオが破棄されたときに AbortError が飛ぶことがあるので無視する
+          const err = (e as any)?.error as DOMException | undefined;
+          if (err && err.name === "AbortError") {
+            console.warn("Audio load aborted (AbortError). This can be ignored.", err);
+            resolve();
+            return;
+          }
+          reject(err ?? e);
+        };
       });
 
-      // AudioContextを作成（BPM検出用）
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // AudioContextを作成し、再生 + 録画用のストリームを作る
+      const audioContext =
+        audioContextRef.current ||
+        new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = audioContext;
 
+      // 既存のソースノードがあれば切り離す
+      if (sourceNodeRef.current) {
+        try {
+          sourceNodeRef.current.disconnect();
+        } catch {
+          // noop
+        }
+      }
+
+      const sourceNode = audioContext.createMediaElementSource(audio);
+      sourceNodeRef.current = sourceNode;
+
+      // スピーカー出力用
+      sourceNode.connect(audioContext.destination);
+
+      // 録画用の MediaStream を作成
+      const dest = audioContext.createMediaStreamDestination();
+      sourceNode.connect(dest);
+
+      setState((prev) => ({
+        ...prev,
+        audioStream: dest.stream,
+      }));
+
       return true;
-    } catch (error) {
+    } catch (error: any) {
+      // メディアがドキュメントから除去されたときの AbortError はユーザーには見せない
+      if (error && error.name === "AbortError") {
+        console.warn("Audio play/load aborted (AbortError).", error);
+        return false;
+      }
       console.error("Failed to load music:", error);
       alert("音楽ファイルの読み込みに失敗しました");
       return false;

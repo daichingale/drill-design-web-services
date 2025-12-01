@@ -3,7 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   // Next.js 16ではTurbopackがデフォルト
-  // webpack設定は不要なので削除
+  // Turbopack設定を追加（空の設定でエラーを回避）
+  turbopack: {},
 };
 
 export default nextConfig;

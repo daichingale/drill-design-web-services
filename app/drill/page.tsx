@@ -36,6 +36,7 @@ import ExportOptionsDialog from "@/components/drill/ExportOptionsDialog";
 import MetadataDialog from "@/components/drill/MetadataDialog";
 import { useMusicSync } from "@/hooks/useMusicSync";
 import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
+// import VideoConverterPanel from "@/components/drill/VideoConverterPanel"; // 一時的に非表示
 import CommandPalette, { type Command } from "@/components/drill/CommandPalette";
 import { useMenu } from "@/context/MenuContext";
 import { useTranslation } from "@/lib/i18n/useTranslation";
@@ -375,7 +376,7 @@ export default function DrillPage() {
   const preview3DRef = useRef<Drill3DPreviewRef>(null);
   const lastSyncedCountRef = useRef<number | null>(null);
 
-  // 音楽同期
+  // 音楽同期（再生・マーカー管理のみ利用。テンポ同期は現状オフ）
   const {
     state: musicState,
     loadMusic,
@@ -399,26 +400,36 @@ export default function DrillPage() {
     const startCount = Math.max(0, Math.round(playRangeStartCount));
     const endCount = Math.max(startCount + 1, Math.round(playRangeEndCount));
 
-    const startSet = sets.find((s) => s.id === playStartId);
-
-    // 音楽同期が有効な場合
-    if (musicState.isLoaded && musicState.markers.length > 0) {
-      // 音楽同期モードを有効化
-      setMusicSyncMode(true);
-      
-      // 音楽は常に0:00から再生
-      seekToMusicTime(0);
-      playMusic();
-      
-      // ドリルのカウントを開始位置に設定（音楽は0:00から始まるが、ドリルは開始カウントから）
-      setCountFromMusic(startCount);
-    } else {
-      // 音楽同期が無効な場合は通常モード
-      setMusicSyncMode(false);
-    }
+    // 音源が読み込まれていて、マーカーが1つ以上ある場合は音楽同期モードを有効化
+    const shouldUseMusicSync = musicState.isLoaded && musicState.markers.length > 0;
     
-    // ドリル再生開始（任意カウント範囲）
-    startPlayByCountRange(startCount, endCount);
+    if (shouldUseMusicSync) {
+      // 音楽同期モード: 開始カウントに対応する音楽時間を計算してシーク
+      const musicTime = getMusicTimeFromCount(startCount);
+      if (musicTime !== null) {
+        seekToMusicTime(musicTime);
+        setMusicSyncMode(true);
+        playMusic();
+        // 音楽同期モードでは、カウントは音楽から設定されるので、エンジンは開始位置だけ設定
+        startPlayByCountRange(startCount, endCount);
+      } else {
+        // マーカー範囲外の場合は通常モード
+        setMusicSyncMode(false);
+        if (musicState.isLoaded) {
+          seekToMusicTime(0);
+          playMusic();
+        }
+        startPlayByCountRange(startCount, endCount);
+      }
+    } else {
+      // 通常モード: BPMベースでエンジンがカウントを進める
+      setMusicSyncMode(false);
+      if (musicState.isLoaded) {
+        seekToMusicTime(0);
+        playMusic();
+      }
+      startPlayByCountRange(startCount, endCount);
+    }
   };
 
   // ===== ズーム機能 =====
@@ -1273,7 +1284,10 @@ export default function DrillPage() {
     musicState,
     setMusicSyncMode,
     setRecordingMode,
-    handleStartPlay,
+    startPlayByCountRange,
+    playMusic,
+    getMusicTimeFromCount,
+    setCountFromMusic,
     stopPlay,
   });
 
@@ -1285,6 +1299,7 @@ export default function DrillPage() {
       stopMusic();
     }
   };
+
 
   // ★ 再生ビューを抜けてから編集するためのラッパーたち
   const handleToggleSelectWrapped = (id: string, multi: boolean = false) => {
@@ -1652,23 +1667,17 @@ export default function DrillPage() {
     [boxEditState, pendingPositions, clampAndSnap, settings.fieldWidth, settings.fieldHeight]
   );
 
-  // 音楽とドリルの再生を同期（音楽の時間からカウントを計算）
+  // 音楽時間からカウントへの自動同期（マーカーがある場合のみ）
   useEffect(() => {
-    if (!musicState.isLoaded || !musicState.markers.length) return;
-    if (!isPlaying) return;
-    // 録画中は音楽同期をスキップ（録画は通常速度で行う）
-    if (isRecording2D || isRecording3D) return;
-
-    // 音楽の現在時間からカウントを計算
+    if (!isPlaying || !musicState.isLoaded || !musicState.isPlaying) return;
+    if (musicState.markers.length === 0) return;
+    
+    // 音楽同期モードが有効な場合のみ、音楽時間からカウントを計算
     const count = getCountFromMusicTime(musicState.currentTime);
-    if (count !== null && isFinite(count)) {
-      // カウントが実際に変わった時だけ更新（無限ループ防止）
-      if (lastSyncedCountRef.current === null || Math.abs(lastSyncedCountRef.current - count) > 0.01) {
-        setCountFromMusic(count);
-        lastSyncedCountRef.current = count;
-      }
+    if (count !== null) {
+      setCountFromMusic(count);
     }
-  }, [musicState.currentTime, musicState.isLoaded, musicState.markers, isPlaying, isRecording2D, isRecording3D, getCountFromMusicTime, setCountFromMusic]);
+  }, [isPlaying, musicState.isLoaded, musicState.isPlaying, musicState.currentTime, musicState.markers, getCountFromMusicTime, setCountFromMusic]);
 
   // キーボード操作（Undo/Redo + Ctrl+A + 矢印キー）
   useEffect(() => {
@@ -2290,12 +2299,20 @@ export default function DrillPage() {
               <div className="pt-2 mt-1 border-t border-slate-700/60">
                 <div className="flex items-center justify-between gap-2">
                   <button
-                    onClick={handleRecord2D}
-                    disabled={isRecording2D || isRecording3D}
-                    className="flex-1 px-3 py-1.5 text-[11px] rounded-md bg-gradient-to-r from-red-600/90 to-red-700/90 hover:from-red-600 hover:to-red-700 text-white disabled:from-slate-700/30 disabled:to-slate-700/30 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-200 border border-red-500/50 shadow-md hover:shadow-lg disabled:shadow-none"
-                    title="2D録画（自動的に再生を開始します）"
+                    onClick={isRecording2D ? handleStopRecording : handleRecord2D}
+                    disabled={isRecording3D}
+                    className={`flex-1 px-3 py-1.5 text-[11px] rounded-md transition-all duration-200 border shadow-md hover:shadow-lg ${
+                      isRecording2D
+                        ? "bg-gradient-to-r from-red-700/90 to-red-800/90 hover:from-red-700 hover:to-red-900 text-white border-red-500/70"
+                        : "bg-gradient-to-r from-red-600/90 to-red-700/90 hover:from-red-600 hover:to-red-700 text-white border-red-500/50"
+                    } disabled:from-slate-700/30 disabled:to-slate-700/30 disabled:text-slate-500 disabled:border-slate-600/60 disabled:cursor-not-allowed disabled:shadow-none`}
+                    title={
+                      isRecording2D
+                        ? "2D録画を停止（ESCキーでも停止できます）"
+                        : "2D録画（自動的に再生を開始します）"
+                    }
                   >
-                    {isRecording2D ? "2D録画中..." : "2D録画"}
+                    {isRecording2D ? "2D録画停止" : "2D録画"}
                   </button>
                   <button
                     onClick={() => setIs3DPreviewOpen(true)}
@@ -2335,24 +2352,30 @@ export default function DrillPage() {
             {/* 音楽同期パネル */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-4 shadow-xl">
               <MusicSyncPanel
-                  isLoaded={musicState.isLoaded}
-                  isPlaying={musicState.isPlaying}
-                  currentTime={musicState.currentTime}
-                  duration={musicState.duration}
-                  markers={musicState.markers}
-                  bpm={musicState.bpm}
-                  onLoadMusic={loadMusic}
-                  onPlayMusic={playMusic}
-                  onStopMusic={stopMusic}
-                  onAddMarker={addMarker}
-                  onRemoveMarker={removeMarker}
-                  onSetBPM={setBPM}
-                  onSyncCurrentTime={syncCurrentTime}
-                  currentCount={currentCount}
-                  playbackBPM={playbackBPM}
-                  onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
-                />
+                isLoaded={musicState.isLoaded}
+                isPlaying={musicState.isPlaying}
+                currentTime={musicState.currentTime}
+                duration={musicState.duration}
+                markers={musicState.markers}
+                bpm={musicState.bpm}
+                fileName={musicState.fileName}
+                onLoadMusic={loadMusic}
+                onPlayMusic={playMusic}
+                onStopMusic={stopMusic}
+                onAddMarker={addMarker}
+                onRemoveMarker={removeMarker}
+                onSetBPM={setBPM}
+                onSyncCurrentTime={syncCurrentTime}
+                currentCount={currentCount}
+                playbackBPM={playbackBPM}
+                onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
+              />
             </div>
+
+            {/* WebM → MP4変換パネル（一時的に非表示：ffmpeg.wasmがNext.js 16/Turbopackと互換性の問題あり） */}
+            {/* <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+              <VideoConverterPanel />
+            </div> */}
           </div>
         </div>
 
@@ -2408,6 +2431,8 @@ export default function DrillPage() {
             onChangeRangeEnd={(c: number) =>
               setPlayRangeEndCount(Math.max(0, Math.round(c)))
             }
+            drillTitle={drillTitle}
+            onClickDrillTitle={() => setIsMetadataDialogOpen(true)}
           />
         </div>
       </div>

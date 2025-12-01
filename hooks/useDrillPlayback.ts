@@ -25,12 +25,12 @@ function buildDrillFromSets(
 
   let maxCount = 0;
 
-  // ★ 先頭セットが 0 カウントなら、エンジン用には「+1 シフト」して渡す
-  const baseOffset =
-    sorted.length && Math.round(sorted[0].startCount) === 0 ? 1 : 0;
+  // ★ 以前は先頭セットが 0 の場合に +1 シフトしていたが、
+  //    UI とエンジンのカウントを完全に一致させるため、そのロジックは廃止する。
+  const baseOffset = 0;
 
   sorted.forEach((set) => {
-    // UI 上の startCount を丸めて、さらに baseOffset を足す
+    // UI 上の startCount を丸めて使用（0 カウントもそのまま扱う）
     const mappedCount = Math.max(0, Math.round(set.startCount) + baseOffset);
     countBySetId[set.id] = mappedCount;
 
@@ -73,17 +73,6 @@ function buildDrillFromSets(
     positionsByMember,
   };
 
-    // デバッグ用ログ
-  console.log("=== buildDrillFromSets ===");
-  console.table(
-    sorted.map((s) => ({
-      id: s.id,
-      name: s.name,
-      uiStartCount: s.startCount,
-      mappedCount: countBySetId[s.id],
-    }))
-  );
-  console.log("drill.maxCount:", drill.maxCount);
 
   return { drill, countBySetId };
 }
@@ -168,22 +157,18 @@ export function useDrillPlayback(
         // 音楽同期モードの場合は、エンジンの自動更新をスキップ
         // （カウントは音楽から直接設定される）
         if (!musicSyncModeRef.current) {
-          engine.update(dt);
-          const positions = engine.getCurrentPositionsMap();
-          setPlaybackPositions(positions);
-          setCurrentCount(engine.currentCount);
+          // 負の dt や異常な値は無視
+          if (dt > 0) {
+            engine.update(dt);
+            const positions = engine.getCurrentPositionsMap();
+            setPlaybackPositions(positions);
+            setCurrentCount(engine.currentCount);
+          }
         }
 
         const range = playRangeRef.current;
         // 録画中は自動停止しない
         if (range && engine.currentCount >= range.endCount && !isRecordingRef.current && !musicSyncModeRef.current) {
-          console.log(
-            "▶ reached end of range",
-            "currentCount=",
-            engine.currentCount,
-            "endCount=",
-            range.endCount
-          );
           engine.pause();
           setIsPlaying(false);
           playRangeRef.current = null;
@@ -233,8 +218,6 @@ export function useDrillPlayback(
       return;
     }
 
-    console.log("▶ startPlayInternal", { startCount, endCount });
-
     playRangeRef.current = { startCount, endCount };
     engine.setCount(startCount);
     setCurrentCount(startCount);
@@ -254,14 +237,6 @@ export function useDrillPlayback(
     const map = countBySetRef.current;
     const startCount = map[startSetId];
     const endCount = map[endSetId];
-
-    console.log("▶ startPlayBySetId", {
-      startSetId,
-      endSetId,
-      startCount,
-      endCount,
-      map,
-    });
 
     if (startCount === undefined || endCount === undefined) {
       alert("セットのカウント情報が見つかりませんでした");

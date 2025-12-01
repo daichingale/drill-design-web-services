@@ -28,6 +28,8 @@ export type TimelineProps = {
   rangeEndCount: number;
   onChangeRangeStart: (count: number) => void;
   onChangeRangeEnd: (count: number) => void;
+  drillTitle?: string;
+  onClickDrillTitle?: () => void;
 };
 
 /* ==================== Header ==================== */
@@ -42,6 +44,8 @@ type HeaderProps = {
   onStepNext: () => void;
   hasSetAtCurrent?: boolean;
   onToggleSetAtCount?: () => void;
+  drillTitle?: string;
+  onClickDrillTitle?: () => void;
 };
 
 const TimelineHeader: React.FC<HeaderProps> = ({
@@ -54,28 +58,39 @@ const TimelineHeader: React.FC<HeaderProps> = ({
   onStepNext,
   hasSetAtCurrent,
   onToggleSetAtCount,
+  drillTitle,
+  onClickDrillTitle,
 }) => {
   return (
     <div className="mb-1 flex items-center justify-between gap-2">
-      {/* left: transport */}
-      <div className="flex items-center gap-2">
+      {/* left: play / stop + drill theme */}
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={isPlaying ? onStopPlay : onStartPlay}
-          className={`w-6 h-6 rounded-full flex items-center justify-center text-sm transition-colors ${
+          className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold transition-colors shadow-md ${
             isPlaying
-              ? "bg-emerald-800/50 border border-emerald-600 text-emerald-100 hover:bg-emerald-800/70"
-              : "bg-emerald-700/50 border border-emerald-500 text-emerald-100 hover:bg-emerald-700/70"
+              ? "bg-emerald-800/70 border border-emerald-500 text-emerald-50 hover:bg-emerald-900"
+              : "bg-emerald-700/80 border border-emerald-400 text-emerald-50 hover:bg-emerald-600"
           }`}
+          title={isPlaying ? "停止" : "再生"}
         >
           {isPlaying ? "■" : "▶"}
         </button>
+
         <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] uppercase tracking-wider text-slate-200">
-            Transport
-          </span>
-          <span className="text-[9px] text-slate-400">
-            Play / Stop & step through counts
+          <button
+            type="button"
+            onClick={onClickDrillTitle}
+            className="text-[11px] font-semibold tracking-wide text-slate-100 hover:text-sky-300 transition-colors text-left line-clamp-1 max-w-[220px]"
+            title={drillTitle || "ドリルのテーマを設定"}
+          >
+            {drillTitle && drillTitle.trim().length > 0
+              ? drillTitle
+              : "（ドリルのテーマ未設定）"}
+          </button>
+          <span className="text-[9px] text-slate-500">
+            このドリルのテーマ / コンセプト
           </span>
         </div>
       </div>
@@ -451,6 +466,8 @@ type BaseTimelineProps = {
   rangeEndCount: number;
   onChangeRangeStart: (count: number) => void;
   onChangeRangeEnd: (count: number) => void;
+  drillTitle?: string;
+  onClickDrillTitle?: () => void;
 };
 
 const BaseTimeline: React.FC<BaseTimelineProps> = ({
@@ -468,6 +485,8 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   rangeEndCount,
   onChangeRangeStart,
   onChangeRangeEnd,
+  drillTitle,
+  onClickDrillTitle,
 }) => {
   if (!sets || sets.length === 0) return null;
 
@@ -634,6 +653,8 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
               ? () => onToggleSetAtCount(Math.round(currentCount))
               : undefined
           }
+          drillTitle={drillTitle}
+          onClickDrillTitle={onClickDrillTitle}
         />
 
         <div
@@ -803,6 +824,8 @@ export default function Timeline(props: TimelineProps) {
     rangeEndCount,
     onChangeRangeStart,
     onChangeRangeEnd,
+    drillTitle,
+    onClickDrillTitle,
   } = props;
 
   const startSet = sets.find((s) => s.id === playStartId);
@@ -916,6 +939,8 @@ export default function Timeline(props: TimelineProps) {
           rangeEndCount={rangeEndCount}
           onChangeRangeStart={onChangeRangeStart}
           onChangeRangeEnd={onChangeRangeEnd}
+          drillTitle={drillTitle}
+          onClickDrillTitle={onClickDrillTitle}
         />
       </div>
     </div>
