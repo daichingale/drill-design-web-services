@@ -96,23 +96,13 @@ export function useDrillSets(
     x: Math.min(Math.max(p.x, 0), fieldWidth),
     y: Math.min(Math.max(p.y, 0), fieldHeight),
   }), [fieldWidth, fieldHeight]);
-  const initialSet1Id = `set-init-1-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const initialSet2Id = `set-init-2-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const initialSetId = `set-init-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   const [sets, setSets] = useState<UiSet[]>([
     {
-      id: initialSet1Id,
-      name: "Set 1",
+      id: initialSetId,
+      name: "",
       startCount: 0,
-      positions: {},
-      note: "",
-      instructions: "",
-      nextMove: "",
-    },
-    {
-      id: initialSet2Id,
-      name: "Set 2",
-      startCount: 16,
       positions: {},
       note: "",
       instructions: "",
@@ -120,7 +110,7 @@ export function useDrillSets(
     },
   ]);
 
-  const [currentSetId, setCurrentSetId] = useState(initialSet1Id);
+  const [currentSetId, setCurrentSetId] = useState(initialSetId);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [arcBinding, setArcBinding] = useState<ArcBinding | null>(null);
 

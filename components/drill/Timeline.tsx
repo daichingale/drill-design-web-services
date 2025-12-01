@@ -23,6 +23,11 @@ export type TimelineProps = {
   onStopPlay: () => void;
   onAddSetAtCurrent: () => void;
   confirmedCounts?: number[]; // 確定されているカウントのリスト
+  onToggleSetAtCount?: (count: number) => void; // ダブルクリックでSETを追加 / 削除
+  rangeStartCount: number;
+  rangeEndCount: number;
+  onChangeRangeStart: (count: number) => void;
+  onChangeRangeEnd: (count: number) => void;
 };
 
 /* ==================== Header ==================== */
@@ -35,7 +40,8 @@ type HeaderProps = {
   onStopPlay: () => void;
   onStepPrev: () => void;
   onStepNext: () => void;
-  onAddSetAtCurrent?: () => void;
+  hasSetAtCurrent?: boolean;
+  onToggleSetAtCount?: () => void;
 };
 
 const TimelineHeader: React.FC<HeaderProps> = ({
@@ -46,7 +52,8 @@ const TimelineHeader: React.FC<HeaderProps> = ({
   onStopPlay,
   onStepPrev,
   onStepNext,
-  onAddSetAtCurrent,
+  hasSetAtCurrent,
+  onToggleSetAtCount,
 }) => {
   return (
     <div className="mb-1 flex items-center justify-between gap-2">
@@ -96,14 +103,26 @@ const TimelineHeader: React.FC<HeaderProps> = ({
           <span className="opacity-70">/ {totalCounts}</span>
         </span>
 
-        {onAddSetAtCurrent && (
-          <button
-            type="button"
-            onClick={onAddSetAtCurrent}
-            className="ml-1 px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-600/50 text-emerald-200 hover:text-emerald-100 uppercase tracking-wider transition-colors"
-          >
-            + Set @ now
-          </button>
+        {onToggleSetAtCount && (
+          hasSetAtCurrent ? (
+            <button
+              type="button"
+              onClick={onToggleSetAtCount}
+              className="ml-1 px-2 py-0.5 text-[10px] rounded-full border border-red-500/70 bg-red-900/60 text-red-100 hover:bg-red-800/80 hover:border-red-400/80 uppercase tracking-wider transition-colors"
+              title="このカウントの SET マーカーを外す"
+            >
+              − SET @ NOW
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggleSetAtCount}
+              className="ml-1 px-2 py-0.5 text-[10px] rounded-full border border-emerald-500/70 bg-emerald-800/60 text-emerald-100 hover:bg-emerald-700/80 hover:border-emerald-400/80 uppercase tracking-wider transition-colors"
+              title="このカウントに SET マーカーを追加"
+            >
+              ＋ SET @ NOW
+            </button>
+          )
         )}
       </div>
     </div>
@@ -216,21 +235,23 @@ const TimelineSegmentsRow: React.FC<SegmentsRowProps> = ({
               boxSizing: "border-box",
             }}
           >
-            {/* Set name */}
-            <span
-              style={{
-                position: "absolute",
-                left: 6,
-                top: 3,
-                fontSize: 10,
-                whiteSpace: "nowrap",
-                color: "#e5e7eb",
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-              }}
-            >
-              {s.name || s.id}
-            </span>
+            {/* Set name（名前が空なら非表示） */}
+            {s.name && (
+              <span
+                style={{
+                  position: "absolute",
+                  left: 6,
+                  top: 3,
+                  fontSize: 10,
+                  whiteSpace: "nowrap",
+                  color: "#e5e7eb",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                {s.name}
+              </span>
+            )}
 
             {/* counts */}
             <span
@@ -312,13 +333,14 @@ const PlayRangeOverlay: React.FC<RangeProps> = ({
     <div
       style={{
         position: "absolute",
-        top: 16,
-        bottom: 0,
+        top: 20,
+        bottom: 24, // 上下にマージンを取り、細い帯にする
         left,
         width,
         background:
-          "linear-gradient(90deg, rgba(56,189,248,0.16), rgba(34,197,94,0.18))",
-        borderRadius: 3,
+          "linear-gradient(90deg, rgba(59,130,246,0.4), rgba(147,51,234,0.45))", // 青〜紫系でSETマーカーと差別化
+        borderRadius: 4,
+        boxShadow: "0 0 6px rgba(191,219,254,0.8)",
         pointerEvents: "none",
       }}
     />
@@ -328,10 +350,32 @@ const PlayRangeOverlay: React.FC<RangeProps> = ({
 type PlayheadProps = {
   currentCount: number;
   pxPerCount: number;
+  totalCounts: number;
 };
 
-const Playhead: React.FC<PlayheadProps> = ({ currentCount, pxPerCount }) => {
+const Playhead: React.FC<PlayheadProps> = ({
+  currentCount,
+  pxPerCount,
+  totalCounts,
+}) => {
   const x = currentCount * pxPerCount;
+  const rounded = Math.round(currentCount);
+
+  const totalWidthPx = totalCounts * pxPerCount;
+  // ラベルは基本的に線の右側に出しつつ、タイムライン枠からはみ出さないようにクランプ
+  const labelWidthPx = 28; // おおよそのラベル幅
+  const minLeft = -2; // 左にはみ出し許容量（少しだけオーバーラップOK）
+  const maxLeft =
+    totalWidthPx > labelWidthPx ? totalWidthPx - labelWidthPx : minLeft;
+
+  let labelOffsetX = 4; // デフォルトは線の少し右
+  const desiredLeft = x + labelOffsetX;
+
+  if (desiredLeft < minLeft) {
+    labelOffsetX = minLeft - x;
+  } else if (desiredLeft > maxLeft) {
+    labelOffsetX = maxLeft - x;
+  }
 
   return (
     <div
@@ -339,13 +383,22 @@ const Playhead: React.FC<PlayheadProps> = ({ currentCount, pxPerCount }) => {
         position: "absolute",
         top: 0,
         bottom: 0,
-        width: 2,
-        background: "#f9fafb",
         left: x,
         pointerEvents: "none",
-        boxShadow: "0 0 4px rgba(248,250,252,0.8)",
       }}
     >
+      {/* 本体バー */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          bottom: 0,
+          width: 2,
+          background: "#f9fafb",
+          boxShadow: "0 0 4px rgba(248,250,252,0.8)",
+        }}
+      />
+      {/* 上の小さな三角 */}
       <div
         style={{
           position: "absolute",
@@ -358,6 +411,25 @@ const Playhead: React.FC<PlayheadProps> = ({ currentCount, pxPerCount }) => {
           borderBottom: "7px solid #f9fafb",
         }}
       />
+      {/* 下に現在カウントのラベル */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 2, // タイムライン内に完全に収まるように上方向へ
+          left: labelOffsetX,
+          padding: "1px 4px",
+          minWidth: 24,
+          borderRadius: 6,
+          background: "rgba(15,23,42,0.95)",
+          border: "1px solid rgba(148,163,184,0.9)",
+          color: "#e5e7eb",
+          fontSize: 9,
+          textAlign: "center",
+          boxShadow: "0 0 6px rgba(15,23,42,0.9)",
+        }}
+      >
+        {rounded}
+      </div>
     </div>
   );
 };
@@ -373,8 +445,12 @@ type BaseTimelineProps = {
   onScrub: (count: number) => void;
   onStartPlay: () => void;
   onStopPlay: () => void;
-  onAddSetAtCurrent?: () => void;
   confirmedCounts?: number[]; // 確定されているカウントのリスト
+  onToggleSetAtCount?: (count: number) => void;
+  rangeStartCount: number;
+  rangeEndCount: number;
+  onChangeRangeStart: (count: number) => void;
+  onChangeRangeEnd: (count: number) => void;
 };
 
 const BaseTimeline: React.FC<BaseTimelineProps> = ({
@@ -386,36 +462,55 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   onScrub,
   onStartPlay,
   onStopPlay,
-  onAddSetAtCurrent,
   confirmedCounts = [],
+  onToggleSetAtCount,
+  rangeStartCount,
+  rangeEndCount,
+  onChangeRangeStart,
+  onChangeRangeEnd,
 }) => {
   if (!sets || sets.length === 0) return null;
 
   const segments = [...sets].sort((a, b) => a.startCount - b.startCount);
 
-  const totalCounts =
-    segments.reduce((max, s) => Math.max(max, s.endCount), 0) || 1;
+  const inferredMax =
+    segments.reduce((max, s) => Math.max(max, s.endCount), 0) || 0;
+  // デフォルトの最大カウントは 8*64 = 512 とし、SETが増えればそれ以上にも自動で伸びる
+  const totalCounts = Math.max(512, inferredMax || 1);
 
   const startSeg = segments.find((s) => s.id === playStartId);
   const endSeg = segments.find((s) => s.id === playEndId);
 
-  const rangeStart = startSeg?.startCount ?? 0;
-  const rangeEnd = endSeg?.endCount ?? totalCounts;
+  const rangeStart = Math.max(0, Math.min(rangeStartCount, rangeEndCount));
+  const rangeEnd = Math.max(rangeStart + 1, rangeEndCount);
+  // 現在カウント（整数化したもの）が、このタイムライン内の「SET（=segments）」
+  // もしくは「確定カウント（confirmedCounts）」として存在するかどうか
+  const roundedCurrent = Math.round(currentCount);
+  const hasSetAtCurrent =
+    confirmedCounts.some((c) => Math.round(c) === roundedCurrent) ||
+    segments.some((s) => Math.round(s.startCount) === roundedCurrent);
 
   const barRef = useRef<HTMLDivElement | null>(null);
   const isDraggingRef = useRef(false);
+  // RANGE はハンドルのみドラッグ可能（バー全体ドラッグはオフ）
+  const rangeDragRef = useRef<"start" | "end" | null>(null);
 
   const pxPerCount = 4;
   const barWidth = Math.max(800, totalCounts * pxPerCount);
 
   const clampCount = (c: number) => Math.min(Math.max(c, 0), totalCounts);
 
-  const scrubAtClientX = (clientX: number) => {
+  const scrubAtClientX = (
+    clientX: number,
+    extra?: (count: number) => void
+  ) => {
     if (!barRef.current) return;
     const rect = barRef.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const count = Math.round(x / pxPerCount);
-    onScrub(clampCount(count));
+    const clamped = clampCount(count);
+    onScrub(clamped);
+    if (extra) extra(clamped);
   };
 
   const handleMouseDown = (
@@ -428,16 +523,88 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   const handleMouseMove = (
     e: React.MouseEvent<HTMLDivElement, MouseEvent>
   ) => {
+    // RANGE ハンドルをドラッグ中
+    if (rangeDragRef.current && barRef.current) {
+      const rect = barRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const count = clampCount(Math.round(x / pxPerCount));
+
+      if (rangeDragRef.current === "start") {
+        const nextStart = Math.min(count, rangeEnd - 1);
+        onChangeRangeStart(nextStart);
+      } else if (rangeDragRef.current === "end") {
+        const nextEnd = Math.max(count, rangeStart + 1);
+        onChangeRangeEnd(nextEnd);
+      }
+      return;
+    }
+
+    // 通常のスクラブ
     if (!isDraggingRef.current) return;
     scrubAtClientX(e.clientX);
   };
 
   const stopDragging = () => {
     isDraggingRef.current = false;
+    rangeDragRef.current = null;
+  };
+
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLDivElement>
+  ) => {
+    const key = e.key;
+    const isCtrl = e.ctrlKey || e.metaKey;
+
+    // Space: 再生 / 停止トグル
+    if (key === " ") {
+      e.preventDefault();
+      if (isPlaying) {
+        onStopPlay();
+      } else {
+        onStartPlay();
+      }
+      return;
+    }
+
+    if (key !== "ArrowLeft" && key !== "ArrowRight") return;
+
+    e.preventDefault();
+
+    const roundedCurrent = Math.round(currentCount);
+
+    // 単純に1カウントずつ移動
+    if (!isCtrl) {
+      const delta = key === "ArrowLeft" ? -1 : 1;
+      const next = Math.max(0, roundedCurrent + delta);
+      onScrub(next);
+      return;
+    }
+
+    // Ctrl + ← / → で SETマーカー位置へジャンプ
+    const markerCounts =
+      confirmedCounts.length > 0
+        ? [...confirmedCounts].sort((a, b) => a - b)
+        : Array.from(new Set(sets.map((s) => Math.round(s.startCount)))).sort(
+            (a, b) => a - b
+          );
+
+    if (markerCounts.length === 0) return;
+
+    if (key === "ArrowLeft") {
+      const prev = markerCounts.filter((c) => c < roundedCurrent).pop();
+      onScrub(prev ?? markerCounts[0]);
+    } else if (key === "ArrowRight") {
+      const next = markerCounts.find((c) => c > roundedCurrent);
+      onScrub(next ?? markerCounts[markerCounts.length - 1]);
+    }
   };
 
   return (
-    <div className="w-full flex justify-center">
+    <div
+      className="w-full flex justify-center"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
       <div
         style={{
           width: 800,
@@ -450,144 +617,166 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
           fontSize: 12,
           padding: "6px 10px 8px",
           boxShadow: "0 -4px 18px rgba(15,23,42,0.9)",
+          position: "relative", // 右上固定オーバーレイの基準
         }}
       >
-      <TimelineHeader
-        currentCount={currentCount}
-        totalCounts={totalCounts}
-        isPlaying={isPlaying}
-        onStartPlay={onStartPlay}
-        onStopPlay={onStopPlay}
-        onStepPrev={() => onScrub(clampCount(currentCount - 1))}
-        onStepNext={() => onScrub(clampCount(currentCount + 1))}
-        onAddSetAtCurrent={onAddSetAtCurrent}
-      />
+        <TimelineHeader
+          currentCount={currentCount}
+          totalCounts={totalCounts}
+          isPlaying={isPlaying}
+          onStartPlay={onStartPlay}
+          onStopPlay={onStopPlay}
+          onStepPrev={() => onScrub(clampCount(currentCount - 1))}
+          onStepNext={() => onScrub(clampCount(currentCount + 1))}
+          hasSetAtCurrent={hasSetAtCurrent}
+          onToggleSetAtCount={
+            onToggleSetAtCount
+              ? () => onToggleSetAtCount(Math.round(currentCount))
+              : undefined
+          }
+        />
 
-      <div
-        className="timeline-scrollbar"
-        style={{
-          width: "100%",
-          overflowX: "auto",
-          overflowY: "hidden",
-        }}
-      >
         <div
-          ref={barRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={stopDragging}
-          onMouseLeave={stopDragging}
+          className="timeline-scrollbar"
           style={{
-            position: "relative",
-            height: 60,
-            width: barWidth,
-            overflow: "hidden",
-            borderRadius: 6,
-            background:
-              "linear-gradient(to bottom, #020617, #020617 40%, #020617)",
-            cursor: "pointer",
-            userSelect: "none",
+            width: "100%",
+            overflowX: "auto",
+            overflowY: "hidden",
           }}
         >
-          <TimelineRuler totalCounts={totalCounts} pxPerCount={pxPerCount} />
-
-          <PlayRangeOverlay
-            rangeStart={rangeStart}
-            rangeEnd={rangeEnd}
-            pxPerCount={pxPerCount}
-          />
-
-          <TimelineSegmentsRow
-            segments={segments}
-            playStartId={playStartId}
-            playEndId={playEndId}
-            pxPerCount={pxPerCount}
-          />
-
-          {/* 確定カウントのマーカー */}
-          {confirmedCounts.map((count) => {
-            const x = count * pxPerCount;
-            return (
-              <div
-                key={`confirmed-${count}`}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  bottom: 0,
-                  left: x - 1,
-                  width: 2,
-                  background: "#10b981", // emerald-500
-                  pointerEvents: "none",
-                  boxShadow: "0 0 4px rgba(16,185,129,0.6)",
-                  zIndex: 5,
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: -3,
-                    left: -4,
-                    width: 0,
-                    height: 0,
-                    borderLeft: "4px solid transparent",
-                    borderRight: "4px solid transparent",
-                    borderBottom: "6px solid #10b981",
-                  }}
-                />
-              </div>
-            );
-          })}
-
-          <Playhead
-            currentCount={clampCount(currentCount)}
-            pxPerCount={pxPerCount}
-          />
-
-          {/* small info overlay in the bar */}
           <div
+            ref={barRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={stopDragging}
+            onMouseLeave={stopDragging}
+            onDoubleClick={(e) => {
+              scrubAtClientX(e.clientX, (c) => {
+                if (onToggleSetAtCount) onToggleSetAtCount(c);
+              });
+            }}
             style={{
-              position: "absolute",
-              right: 8,
-              top: 20,
-              padding: "3px 8px",
-              borderRadius: 999,
-              background: "rgba(15,23,42,0.9)",
-              border: "1px solid rgba(148,163,184,0.7)",
-              fontSize: 9,
-              color: "#e5e7eb",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
+              position: "relative",
+              height: 72,
+              width: barWidth,
+              overflow: "visible",
+              borderRadius: 6,
+              background:
+                "linear-gradient(to bottom, #020617, #020617 40%, #020617)",
+              cursor: "pointer",
+              userSelect: "none",
             }}
           >
-            <span style={{ textTransform: "uppercase", opacity: 0.7 }}>
-              Range
-            </span>
-            <span>
-              {startSeg?.name ?? "—"}{" "}
-              <span style={{ opacity: 0.6, fontSize: 8 }}>
-                ({rangeStart})
-              </span>
-            </span>
-            <span style={{ opacity: 0.5 }}>→</span>
-            <span>
-              {endSeg?.name ?? "—"}{" "}
-              <span style={{ opacity: 0.6, fontSize: 8 }}>({rangeEnd})</span>
-            </span>
-            <span
+            <TimelineRuler totalCounts={totalCounts} pxPerCount={pxPerCount} />
+
+            <TimelineSegmentsRow
+              segments={segments}
+              playStartId={playStartId}
+              playEndId={playEndId}
+              pxPerCount={pxPerCount}
+            />
+
+            {/* 確定カウントのマーカー */}
+            {confirmedCounts.map((count) => {
+              const x = count * pxPerCount;
+              return (
+                <div
+                  key={`confirmed-${count}`}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    bottom: 0,
+                    left: x - 1,
+                    width: 2,
+                    background: "#10b981",
+                    pointerEvents: "none",
+                    boxShadow: "0 0 4px rgba(16,185,129,0.6)",
+                    zIndex: 5,
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: -3,
+                      left: -4,
+                      width: 0,
+                      height: 0,
+                      borderLeft: "4px solid transparent",
+                      borderRight: "4px solid transparent",
+                      borderBottom: "6px solid #10b981",
+                    }}
+                  />
+                </div>
+              );
+            })}
+
+            {/* RANGE バー */}
+            <PlayRangeOverlay
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              pxPerCount={pxPerCount}
+            />
+
+            {/* RANGE ハンドル */}
+            <div
               style={{
-                marginLeft: 6,
-                padding: "1px 6px",
-                borderRadius: 999,
-                background: "rgba(15,118,110,0.4)",
-                fontSize: 8,
+                position: "absolute",
+                top: 18,
+                left: rangeStart * pxPerCount,
+                width: Math.max((rangeEnd - rangeStart) * pxPerCount, 0),
+                height: "100%",
+                pointerEvents: "none",
               }}
             >
-              Now {Math.round(currentCount)}
-            </span>
+              {/* 左ハンドル */}
+              <div
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  rangeDragRef.current = "start";
+                }}
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: -6,
+                  width: 10,
+                  height: 12,
+                  background:
+                    "linear-gradient(to bottom, rgba(148,163,184,0.9), rgba(51,65,85,0.9))",
+                  borderRadius: 3,
+                  border: "1px solid rgba(15,23,42,0.9)",
+                  cursor: "ew-resize",
+                  pointerEvents: "auto",
+                }}
+              />
+              {/* 右ハンドル */}
+              <div
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  rangeDragRef.current = "end";
+                }}
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: -6,
+                  width: 10,
+                  height: 12,
+                  background:
+                    "linear-gradient(to bottom, rgba(148,163,184,0.9), rgba(51,65,85,0.9))",
+                  borderRadius: 3,
+                  border: "1px solid rgba(15,23,42,0.9)",
+                  cursor: "ew-resize",
+                  pointerEvents: "auto",
+                }}
+              />
+            </div>
+
+            <Playhead
+              currentCount={clampCount(currentCount)}
+              pxPerCount={pxPerCount}
+              totalCounts={totalCounts}
+            />
           </div>
         </div>
-      </div>
       </div>
     </div>
   );
@@ -608,10 +797,54 @@ export default function Timeline(props: TimelineProps) {
     onStartPlay,
     onStopPlay,
     onAddSetAtCurrent,
+    confirmedCounts = [],
+    onToggleSetAtCount,
+    rangeStartCount,
+    rangeEndCount,
+    onChangeRangeStart,
+    onChangeRangeEnd,
   } = props;
 
   const startSet = sets.find((s) => s.id === playStartId);
   const endSet = sets.find((s) => s.id === playEndId);
+
+  const hasSetAtCurrent = sets.some(
+    (s) => Math.round(s.startCount) === Math.round(currentCount)
+  );
+
+  // Range を「SET名」ではなく「カウント」ベースで扱う
+  const rangeCountOptions =
+    confirmedCounts.length > 0
+      ? [...confirmedCounts].sort((a, b) => a - b)
+      : Array.from(new Set(sets.map((s) => s.startCount))).sort((a, b) => a - b);
+
+  const startCountValue =
+    startSet?.startCount ?? rangeCountOptions[0] ?? 0;
+  const endCountValue =
+    endSet?.startCount ?? rangeCountOptions[rangeCountOptions.length - 1] ?? startCountValue;
+
+  const findSegmentIdForCount = (count: number): string | null => {
+    if (!sets.length) return null;
+    // カウントが含まれるセグメントを探す
+    const byStart = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const seg = byStart.find((s, idx) => {
+      const end =
+        idx < byStart.length - 1 ? byStart[idx + 1].startCount : s.startCount + 32;
+      return count >= s.startCount && count < end;
+    });
+    if (seg) return seg.id;
+    // 見つからなければ startCount が一番近いもの
+    let best = byStart[0];
+    let bestDiff = Math.abs(byStart[0].startCount - count);
+    for (let i = 1; i < byStart.length; i++) {
+      const d = Math.abs(byStart[i].startCount - count);
+      if (d < bestDiff) {
+        bestDiff = d;
+        best = byStart[i];
+      }
+    }
+    return best.id;
+  };
 
   return (
     <div className="w-full flex justify-center">
@@ -619,67 +852,71 @@ export default function Timeline(props: TimelineProps) {
         {/* Range header (上) */}
         <div className="flex flex-wrap items-center gap-3 text-[11px] px-2">
           <div className="flex items-center gap-2">
-            <span className="text-slate-300 text-[11px] uppercase tracking-[0.12em] font-semibold">
+            <span
+              className="text-slate-300 text-[11px] uppercase tracking-[0.12em] font-semibold cursor-pointer select-none"
+              onDoubleClick={() => {
+                // Range リセット：全体を対象に
+                onChangeRangeStart(0);
+                onChangeRangeEnd(totalCounts);
+              }}
+            >
               Range
             </span>
-            <select
-              className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-900 transition-colors"
-              value={playStartId}
-              onChange={(e) => onChangePlayStart(e.target.value)}
-            >
-              {sets.map((s, index) => (
-                <option key={`start-${s.id}-${index}`} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <input
+              type="number"
+              className="w-16 rounded-md border border-slate-600 bg-slate-950 px-1.5 py-0.5 text-[11px] text-slate-200 hover:bg-slate-900 transition-colors"
+              value={Math.round(rangeStartCount)}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                onChangeRangeStart(isNaN(v) ? 0 : v);
+              }}
+            />
             <span className="text-slate-400 text-[10px]">→</span>
-            <select
-              className="rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-[11px] text-slate-200 hover:bg-slate-900 transition-colors"
-              value={playEndId}
-              onChange={(e) => onChangePlayEnd(e.target.value)}
-            >
-              {sets.map((s, index) => (
-                <option key={`end-${s.id}-${index}`} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            <input
+              type="number"
+              className="w-16 rounded-md border border-slate-600 bg-slate-950 px-1.5 py-0.5 text-[11px] text-slate-200 hover:bg-slate-900 transition-colors"
+              value={Math.round(rangeEndCount)}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                onChangeRangeEnd(isNaN(v) ? 0 : v);
+              }}
+            />
           </div>
 
           {startSet && endSet && (
             <div className="text-[10px] text-slate-400/80 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/40">
-              ({startSet.name} {startSet.startCount} → {endSet.name}{" "}
-              {endSet.startCount})
+              (Count {startCountValue} → Count {endCountValue})
             </div>
           )}
 
           <div className="ml-auto flex items-center gap-2 text-[10px]">
             <span className="text-slate-400/90 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/40">
-              Now: <span className="text-slate-200 font-medium">{Math.round(currentCount)}</span> count
+              Now:{" "}
+              <span className="text-slate-200 font-medium">
+                {Math.round(currentCount)}
+              </span>{" "}
+              count
             </span>
-            <button
-              type="button"
-              onClick={onAddSetAtCurrent}
-              className="rounded-md border border-slate-600/60 bg-slate-800/50 px-2.5 py-1 text-[10px] hover:bg-slate-700/50 hover:border-slate-500/60 text-slate-200 transition-all duration-200"
-            >
-              + Insert set @ current
-            </button>
           </div>
         </div>
 
         <BaseTimeline
-        sets={sets}
-        playStartId={playStartId}
-        playEndId={playEndId}
-        currentCount={currentCount}
-        isPlaying={isPlaying}
-        onScrub={onScrub}
-        onStartPlay={onStartPlay}
-        onStopPlay={onStopPlay}
-        onAddSetAtCurrent={onAddSetAtCurrent}
-        confirmedCounts={props.confirmedCounts}
-      />
+          sets={sets}
+          playStartId={playStartId}
+          playEndId={playEndId}
+          currentCount={currentCount}
+          isPlaying={isPlaying}
+          onScrub={onScrub}
+          onStartPlay={onStartPlay}
+          onStopPlay={onStopPlay}
+          onAddSetAtCurrent={onAddSetAtCurrent}
+          confirmedCounts={confirmedCounts}
+          onToggleSetAtCount={onToggleSetAtCount}
+          rangeStartCount={rangeStartCount}
+          rangeEndCount={rangeEndCount}
+          onChangeRangeStart={onChangeRangeStart}
+          onChangeRangeEnd={onChangeRangeEnd}
+        />
       </div>
     </div>
   );

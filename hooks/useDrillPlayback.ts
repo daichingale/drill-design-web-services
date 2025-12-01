@@ -60,16 +60,20 @@ function buildDrillFromSets(
     if (mappedCount > maxCount) maxCount = mappedCount;
   });
 
+  const defaultMax = 512; // UI 上のデフォルト最大カウント
+
   const drill: Drill = {
     id: "from-sets",
     title: "From UI Sets",
     bpm: 144,
-    maxCount: maxCount + 16,
+    // SET は「点」なので末尾に余計な +16 は付けない。
+    // ただしタイムラインのデフォルト長 512 は確保しておく。
+    maxCount: Math.max(defaultMax, maxCount),
     members: drillMembers,
     positionsByMember,
   };
 
-  // デバッグ用ログ
+    // デバッグ用ログ
   console.log("=== buildDrillFromSets ===");
   console.table(
     sorted.map((s) => ({
@@ -90,6 +94,7 @@ type UseDrillPlaybackResult = {
   playbackPositions: Record<string, WorldPos>;
   handleScrub: (count: number) => void;
   startPlayBySetId: (startSetId: string, endSetId: string) => void;
+  startPlayByCountRange: (startCount: number, endCount: number) => void;
   stopPlay: () => void;
   clearPlaybackView: () => void;
   setRecordingMode: (recording: boolean) => void; // 録画中フラグ
@@ -123,7 +128,10 @@ export function useDrillPlayback(
 
   // Drill 再構築
   useEffect(() => {
-    if (!members.length || !sets.length) return;
+    // セットが存在しないときだけスキップ。
+    // メンバーが 0 人でも、カウント軸だけ先に動かせるようにエンジンは構築する。
+    if (!sets.length) return;
+
     const { drill, countBySetId } = buildDrillFromSets(sets, members);
     countBySetRef.current = countBySetId;
 
@@ -195,19 +203,8 @@ export function useDrillPlayback(
     const engine = engineRef.current;
     if (!engine) return;
 
-    // sets から最大カウントを推定（engine 内部参照は使わない）
-    const sorted = [...sets].sort((a, b) => a.startCount - b.startCount);
-    const baseOffset =
-      sorted.length && Math.round(sorted[0].startCount) === 0 ? 1 : 0;
-
-    const maxCountUi =
-      (sorted.length
-        ? Math.max(
-            ...sorted.map((s) => Math.round(s.startCount) + baseOffset)
-          )
-        : 0) + 16;
-
-    const clamped = Math.max(0, Math.min(count, maxCountUi));
+    // DrillEngine 内部で Drill.maxCount にクランプされるので、ここでは 0 以上だけ保証する
+    const clamped = Math.max(0, count);
     engine.setCount(clamped);
     const positions = engine.getCurrentPositionsMap();
     setIsPlaying(false);
@@ -230,10 +227,6 @@ export function useDrillPlayback(
       alert("ドリルデータがまだ準備できていません");
       return;
     }
-    if (sets.length < 2) {
-      alert("アニメーションには最低2セット必要です");
-      return;
-    }
 
     if (startCount >= endCount) {
       alert("開始カウントは終了カウントより前にしてください");
@@ -247,6 +240,11 @@ export function useDrillPlayback(
     setCurrentCount(startCount);
     engine.play();
     setIsPlaying(true);
+  };
+
+  // 任意のカウント範囲から再生
+  const startPlayByCountRange = (startCount: number, endCount: number) => {
+    startPlayInternal(startCount, endCount);
   };
 
   // Set ID から再生
@@ -309,6 +307,7 @@ export function useDrillPlayback(
     playbackPositions,
     handleScrub,
     startPlayBySetId,
+    startPlayByCountRange,
     stopPlay,
     clearPlaybackView,
     setRecordingMode,

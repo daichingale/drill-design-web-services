@@ -42,6 +42,7 @@ import { useTranslation } from "@/lib/i18n/useTranslation";
 import { useClipboard } from "@/context/ClipboardContext";
 import { useKeyboardShortcuts, type ShortcutDefinition } from "@/hooks/useKeyboardShortcuts";
 import ShortcutHelpDialog from "@/components/ShortcutHelpDialog";
+import EditorHelpDialog from "@/components/EditorHelpDialog";
 import { addGlobalNotification } from "@/components/ErrorNotification";
 import { useShortcuts } from "@/context/ShortcutContext";
 
@@ -86,6 +87,7 @@ export default function DrillPage() {
   const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
   const [drillDbId, setDrillDbId] = useState<string | null>(null); // データベースのドリルID
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [editorHelpOpen, setEditorHelpOpen] = useState(false);
   const [pendingNewMembers, setPendingNewMembers] = useState<Member[] | null>(null);
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
   const [lineEditState, setLineEditState] = useState<LineEditState>(null);
@@ -115,6 +117,19 @@ export default function DrillPage() {
         setDrillDataName(metadata.dataName || "");
       }
     }
+  }, []);
+
+  // レイアウト側の「?」ボタンからヘルプを開くためのイベントリスナー
+  useEffect(() => {
+    const handler = () => setEditorHelpOpen(true);
+    if (typeof window !== "undefined") {
+      window.addEventListener("open-editor-help", handler);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("open-editor-help", handler);
+      }
+    };
   }, []);
 
   // データベースからドリルを読み込む
@@ -323,6 +338,7 @@ export default function DrillPage() {
     playbackPositions,
     handleScrub,
     startPlayBySetId,
+    startPlayByCountRange,
     stopPlay,
     clearPlaybackView,
     setRecordingMode,
@@ -333,6 +349,10 @@ export default function DrillPage() {
   // 再生範囲（開始 / 終了セットの ID）
   const [playStartId, setPlayStartId] = useState<string>("");
   const [playEndId, setPlayEndId] = useState<string>("");
+
+  // カウントベースの再生範囲（任意のカウントから任意のカウントまで）
+  const [playRangeStartCount, setPlayRangeStartCount] = useState<number>(0);
+  const [playRangeEndCount, setPlayRangeEndCount] = useState<number>(64);
 
   // セットが変わったら再生範囲を自動調整
   useEffect(() => {
@@ -372,11 +392,14 @@ export default function DrillPage() {
     seekToMusicTime,
   } = useMusicSync();
 
-  // 再生開始（Set ID ベース）
+  // 再生開始（カウント範囲ベース。セットIDベースの指定があればそれも併用）
   const handleStartPlay = () => {
     if (!sets.length) return;
+
+    const startCount = Math.max(0, Math.round(playRangeStartCount));
+    const endCount = Math.max(startCount + 1, Math.round(playRangeEndCount));
+
     const startSet = sets.find((s) => s.id === playStartId);
-    if (!startSet) return;
 
     // 音楽同期が有効な場合
     if (musicState.isLoaded && musicState.markers.length > 0) {
@@ -387,15 +410,15 @@ export default function DrillPage() {
       seekToMusicTime(0);
       playMusic();
       
-      // ドリルのカウントを開始位置に設定（音楽は0:00から始まるが、ドリルは開始セットのカウントから）
-      setCountFromMusic(startSet.startCount);
+      // ドリルのカウントを開始位置に設定（音楽は0:00から始まるが、ドリルは開始カウントから）
+      setCountFromMusic(startCount);
     } else {
       // 音楽同期が無効な場合は通常モード
       setMusicSyncMode(false);
     }
     
-    // ドリル再生開始
-    startPlayBySetId(playStartId, playEndId);
+    // ドリル再生開始（任意カウント範囲）
+    startPlayByCountRange(startCount, endCount);
   };
 
   // ===== ズーム機能 =====
@@ -565,10 +588,15 @@ export default function DrillPage() {
   const currentSetRange = getCurrentSetRange();
 
   // すべてのSETで確定されているカウントのリストを取得
+  // - positionsByCount に登録されたカウント
+  // - 各 Set の startCount（構造上のSETとして扱う）
   const getConfirmedCounts = useCallback(() => {
     const allConfirmedCounts = new Set<number>();
     
     sets.forEach(set => {
+      // Set 自体の startCount も「確定カウント」とみなす
+      allConfirmedCounts.add(Math.round(set.startCount));
+
       if (set.positionsByCount) {
         Object.keys(set.positionsByCount).forEach(countStr => {
           allConfirmedCounts.add(Number(countStr));
@@ -759,6 +787,30 @@ export default function DrillPage() {
   const handleDeselectAll = useCallback(() => {
     handleSelectBulk([]);
   }, [handleSelectBulk]);
+
+  // タイムラインやダブルクリックから「このカウントにSETマーカーを打つ / 既存SETを削除」
+  const handleToggleSetAtCount = useCallback(
+    (count: number) => {
+      const rounded = Math.max(0, Math.round(count));
+
+      const targetSet = sets.find(
+        (s) => Math.round(s.startCount) === rounded
+      );
+
+      if (targetSet) {
+        const confirmed = window.confirm(
+          `Count ${rounded} にあるセット（${targetSet.name || "無名セット"}）を削除しますか？\nこのセットに紐づく位置情報も失われます。`
+        );
+        if (!confirmed) return;
+        deleteSet(targetSet.id);
+        return;
+      }
+
+      // そのカウントにSETがなければ新規に追加
+      addSetAtCount(rounded);
+    },
+    [sets, addSetAtCount, deleteSet]
+  );
 
   // 確定カウントやタイムラインバーから安全にジャンプするためのヘルパー
   const handleJumpToCountSafe = useCallback(
@@ -1272,7 +1324,9 @@ export default function DrillPage() {
     });
   };
 
-  // 位置を確定する関数（pendingPositions → positionsByCount への書き込み）
+  // 位置を確定する関数
+  // - pendingPositions を現在の SET / positionsByCount に書き込み
+  // - かつ「そのカウントを startCount に持つ SET」がなければ新規作成する
   const handleConfirmPositions = useCallback(() => {
     if (!pendingPositions) return;
     
@@ -1291,20 +1345,55 @@ export default function DrillPage() {
         [currentCountRounded]: { ...pendingPositions },
       };
       
+      const mergedBasePositions = {
+        ...set.positions,
+        ...pendingPositions,
+      };
+      
       return {
         ...set,
         // 現在表示中のSETの「ベース位置」も、確定した pendingPositions に合わせて更新
-        // これにより pendingPositions をクリアしたあともメンバーが見え続ける
-        positions: {
-          ...set.positions,
-          ...pendingPositions,
-        },
+        positions: mergedBasePositions,
         positionsByCount: newPositionsByCount,
       };
     });
+
+    // ① 「現在の確定カウント = startCount を持つ SET」が存在しなければ、新しく SET を追加する
+    const hasSetAtCurrentCount = updatedSets.some(
+      (s) => Math.round(s.startCount) === currentCountRounded
+    );
+
+    let finalSets = updatedSets;
+
+    if (!hasSetAtCurrentCount) {
+      const baseSet = updatedSets.find((s) => s.id === currentSetId) ?? updatedSets[0];
+
+      const newId = `set-${Date.now()}-${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+
+      const newSet: UiSet = {
+        id: newId,
+        name: "", // 名前は後からユーザーが付けられるよう空にしておく
+        startCount: currentCountRounded,
+        positions: {
+          // ベースSETの位置をベースに、確定した位置で上書き
+          ...(baseSet?.positions ?? {}),
+          ...pendingPositions,
+        },
+        // メモ類はベースSETを引き継ぐ
+        note: baseSet?.note ?? "",
+        instructions: baseSet?.instructions ?? "",
+        nextMove: baseSet?.nextMove ?? "",
+      };
+
+      finalSets = [...updatedSets, newSet].sort(
+        (a, b) => a.startCount - b.startCount
+      );
+    }
     
     // restoreStateを使って状態を更新
-    restoreState(updatedSets, selectedIds, currentSetId);
+    restoreState(finalSets, selectedIds, currentSetId);
     
     // 一時的な位置をクリア
     setPendingPositions(null);
@@ -1796,6 +1885,12 @@ export default function DrillPage() {
         onClose={() => setShortcutHelpOpen(false)}
       />
 
+      {/* エディタ全体のヘルプダイアログ */}
+      <EditorHelpDialog
+        open={editorHelpOpen}
+        onClose={() => setEditorHelpOpen(false)}
+      />
+
       {/* 3Dプレビューモーダル */}
       {is3DPreviewOpen && (
         <div
@@ -2271,7 +2366,7 @@ export default function DrillPage() {
               endCount:
                 index < sets.length - 1
                   ? sets[index + 1].startCount
-                  : s.startCount + 32,
+                  : s.startCount, // 最後のSETを「点」として扱う
             }))}
             playStartId={playStartId}
             playEndId={playEndId}
@@ -2304,6 +2399,15 @@ export default function DrillPage() {
             onStopPlay={handleStopPlay}
             onAddSetAtCurrent={() => addSetAtCount(currentCount)}
             confirmedCounts={confirmedCounts}
+            onToggleSetAtCount={handleToggleSetAtCount}
+            rangeStartCount={playRangeStartCount}
+            rangeEndCount={playRangeEndCount}
+            onChangeRangeStart={(c: number) =>
+              setPlayRangeStartCount(Math.max(0, Math.round(c)))
+            }
+            onChangeRangeEnd={(c: number) =>
+              setPlayRangeEndCount(Math.max(0, Math.round(c)))
+            }
           />
         </div>
       </div>

@@ -10,8 +10,7 @@ import { I18nProvider } from "@/context/I18nContext";
 import { ClipboardProvider } from "@/context/ClipboardContext";
 import { ShortcutProvider } from "@/context/ShortcutContext";
 import MenuBar from "@/components/MenuBar";
-import LanguageToggle from "@/components/LanguageToggle";
-import UserMenu from "@/components/UserMenu";
+import HeaderControls from "@/components/HeaderControls";
 import ErrorNotification from "@/components/ErrorNotification";
 import SessionProvider from "@/components/providers/SessionProvider";
 
@@ -51,10 +50,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                       </Link>
                       <MenuBar />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <LanguageToggle />
-                      <UserMenu />
-                    </div>
+                    <HeaderControls />
                   </div>
                 </div>
               </div>
