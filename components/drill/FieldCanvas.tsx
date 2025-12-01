@@ -27,6 +27,29 @@ type Props = {
   individualPlacementMode?: boolean; // 個別配置モード
   onPlaceMember?: (id: string, pos: WorldPos) => void; // 個別配置コールバック
   placementQueue?: string[]; // 配置待ちのメンバーIDリスト
+  // 横一列レイアウト編集用（未確定ラインの両端ハンドル）
+  lineEditState?: {
+    memberIds: string[];
+    start: WorldPos;
+    end: WorldPos;
+  } | null;
+  onUpdateLineEdit?: (start: WorldPos, end: WorldPos) => void;
+  // ボックスレイアウト編集用（四隅ハンドル）
+  boxEditState?: {
+    memberIds: string[];
+    cols: number;
+    rows: number;
+    tl: WorldPos;
+    tr: WorldPos;
+    br: WorldPos;
+    bl: WorldPos;
+  } | null;
+  onUpdateBoxEdit?: (corners: {
+    tl: WorldPos;
+    tr: WorldPos;
+    br: WorldPos;
+    bl: WorldPos;
+  }) => void;
 };
 
 // ===== キャンバス設定 =====
@@ -60,6 +83,10 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
     individualPlacementMode = false,
     onPlaceMember,
     placementQueue = [],
+    lineEditState = null,
+    onUpdateLineEdit,
+    boxEditState = null,
+    onUpdateBoxEdit,
   } = props;
   
   // 設定を取得
@@ -455,11 +482,12 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
           const playerId = `P${index + 1}`;
 
           return (
-            <Group
+              <Group
               key={m.id}
               x={canvasPos.x}
               y={canvasPos.y}
-              draggable={!isPlaying && !activeArc}
+              // ライン編集中（lineEditStateが有効）のときはメンバーをドラッグ不可にする
+              draggable={!isPlaying && !activeArc && !lineEditState && !boxEditState}
               onClick={(e: any) => {
                 e.cancelBubble = true; // イベントの伝播を防ぐ
                 const multi =
@@ -640,6 +668,127 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             </Group>
           );
         })}
+
+        {/* 横一列レイアウト編集用ハンドル（pendingPositions による未確定ラインを想定） */}
+        {lineEditState && !isPlaying && !activeArc && onUpdateLineEdit && (() => {
+          const { start, end } = lineEditState;
+          const cStart = worldToCanvas(start);
+          const cEnd = worldToCanvas(end);
+          return (
+            <>
+              {/* ライン本体 */}
+              <Line
+                points={[cStart.x, cStart.y, cEnd.x, cEnd.y]}
+                stroke="#38bdf8"
+                strokeWidth={2}
+                dash={[6, 4]}
+                onMouseDown={(e: any) => {
+                  // メンバー選択など下層へのイベント伝播を防ぐ
+                  e.cancelBubble = true;
+                }}
+              />
+              {/* 開始ハンドル */}
+              <Circle
+                x={cStart.x}
+                y={cStart.y}
+                radius={7}
+                fill="#0ea5e9"
+                stroke="#0369a1"
+                strokeWidth={2}
+                draggable
+                onMouseDown={(e: any) => {
+                  e.cancelBubble = true;
+                }}
+                onDragMove={(e: any) => {
+                  const { x, y } = e.target.position();
+                  const world = canvasToWorld(x, y);
+                  onUpdateLineEdit(world, end);
+                }}
+              />
+              {/* 終端ハンドル */}
+              <Circle
+                x={cEnd.x}
+                y={cEnd.y}
+                radius={7}
+                fill="#0ea5e9"
+                stroke="#0369a1"
+                strokeWidth={2}
+                draggable
+                onMouseDown={(e: any) => {
+                  e.cancelBubble = true;
+                }}
+                onDragMove={(e: any) => {
+                  const { x, y } = e.target.position();
+                  const world = canvasToWorld(x, y);
+                  onUpdateLineEdit(start, world);
+                }}
+              />
+            </>
+          );
+        })()}
+
+        {/* ボックスレイアウト編集用ハンドル（四隅のドラッグで平行四辺形に変形） */}
+        {boxEditState && !isPlaying && !activeArc && onUpdateBoxEdit && (() => {
+          const { tl, tr, br, bl } = boxEditState;
+          const cTL = worldToCanvas(tl);
+          const cTR = worldToCanvas(tr);
+          const cBR = worldToCanvas(br);
+          const cBL = worldToCanvas(bl);
+
+          return (
+            <>
+              {/* ボックスの輪郭 */}
+              <Line
+                points={[
+                  cTL.x, cTL.y,
+                  cTR.x, cTR.y,
+                  cBR.x, cBR.y,
+                  cBL.x, cBL.y,
+                  cTL.x, cTL.y,
+                ]}
+                stroke="#22c55e"
+                strokeWidth={2}
+                dash={[6, 4]}
+                closed
+                onMouseDown={(e: any) => {
+                  e.cancelBubble = true;
+                }}
+              />
+
+              {/* 各コーナーハンドル */}
+              {[
+                { key: "tl", cx: cTL.x, cy: cTL.y },
+                { key: "tr", cx: cTR.x, cy: cTR.y },
+                { key: "br", cx: cBR.x, cy: cBR.y },
+                { key: "bl", cx: cBL.x, cy: cBL.y },
+              ].map(({ key, cx, cy }) => (
+                <Circle
+                  key={`box-corner-${key}`}
+                  x={cx}
+                  y={cy}
+                  radius={7}
+                  fill="#22c55e"
+                  stroke="#166534"
+                  strokeWidth={2}
+                  draggable
+                  onMouseDown={(e: any) => {
+                    e.cancelBubble = true;
+                  }}
+                  onDragMove={(e: any) => {
+                    const { x, y } = e.target.position();
+                    const w = canvasToWorld(x, y);
+                    const next = { tl, tr, br, bl };
+                    if (key === "tl") next.tl = w;
+                    if (key === "tr") next.tr = w;
+                    if (key === "br") next.br = w;
+                    if (key === "bl") next.bl = w;
+                    onUpdateBoxEdit(next);
+                  }}
+                />
+              ))}
+            </>
+          );
+        })()}
 
         {/* ★ 矩形選択の表示 */}
         {selectionRect && (() => {

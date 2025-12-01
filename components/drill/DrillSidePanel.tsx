@@ -23,6 +23,7 @@ type Props = {
   currentSetPositions: Record<string, WorldPos>;
   // メンバー管理機能
   onAddMember?: () => void;
+  onAddMultipleMembers?: (members: BasicMember[]) => void;
   onDeleteMember?: (id: string) => void;
   onUpdateMember?: (id: string, field: "name" | "part" | "color", value: string) => void;
   onImportMembers?: (members: BasicMember[]) => void;
@@ -35,11 +36,16 @@ export default function DrillSidePanel({
   selectedIds,
   currentSetPositions,
   onAddMember,
+  onAddMultipleMembers,
   onDeleteMember,
   onUpdateMember,
   onImportMembers,
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>("selection");
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkAddPart, setBulkAddPart] = useState("Flute");
+  const [bulkAddCount, setBulkAddCount] = useState(5);
+  const [bulkAddStartNum, setBulkAddStartNum] = useState(1);
   const singleSelectedId =
     selectedIds.length === 1 ? selectedIds[0] : null;
 
@@ -84,6 +90,54 @@ export default function DrillSidePanel({
       reader.readAsText(file);
     };
     input.click();
+  };
+
+  const handleBulkAdd = () => {
+    if (!onAddMultipleMembers) {
+      alert("一括追加機能が利用できません");
+      return;
+    }
+
+    const newMembers: BasicMember[] = [];
+    const existingIds = new Set(members.map((m) => m.id));
+
+    const colors = [
+      "#3498db",
+      "#e74c3c",
+      "#2ecc71",
+      "#f39c12",
+      "#9b59b6",
+      "#1abc9c",
+      "#34495e",
+      "#e67e22",
+      "#16a085",
+      "#c0392b",
+    ];
+
+    for (let i = 0; i < bulkAddCount; i++) {
+      const num = bulkAddStartNum + i;
+      const prefix = bulkAddPart.substring(0, 3).toUpperCase() || "MEM";
+      let id = `${prefix}${num}`;
+
+      let suffix = 0;
+      while (existingIds.has(id)) {
+        suffix++;
+        id = `${prefix}${num}_${suffix}`;
+      }
+      existingIds.add(id);
+
+      newMembers.push({
+        id,
+        name: `${bulkAddPart} ${num}`,
+        part: bulkAddPart,
+        color: colors[i % colors.length],
+      });
+    }
+
+    onAddMultipleMembers(newMembers);
+    setShowBulkAdd(false);
+    setBulkAddCount(5);
+    setBulkAddStartNum(1);
   };
 
   return (
@@ -197,6 +251,23 @@ export default function DrillSidePanel({
                   })}
                 </div>
               </div>
+            ) : members.length === 0 ? (
+              <div className="p-4 rounded-md bg-slate-800/30 border border-slate-700/40 border-dashed space-y-3">
+                <p className="text-slate-300 text-sm text-center leading-relaxed">
+                  まだメンバーがいません。
+                  <br />
+                  まず「メンバー管理」タブからメンバーを追加してください。
+                </p>
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("management")}
+                    className="px-3 py-1.5 text-xs rounded-md bg-emerald-600/80 hover:bg-emerald-600 text-white transition-colors"
+                  >
+                    メンバー管理を開く
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="p-4 rounded-md bg-slate-800/30 border border-slate-700/40 border-dashed">
                 <p className="text-slate-400/80 text-sm text-center leading-relaxed">
@@ -211,27 +282,116 @@ export default function DrillSidePanel({
           // メンバー管理
           <div className="flex flex-col h-full">
             {/* ヘッダー（固定） */}
-            <div className="flex items-center justify-between mb-3 shrink-0">
-              <h3 className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
-                メンバー一覧 ({members.length})
-              </h3>
-              {onAddMember && (
-                <button
-                  onClick={onAddMember}
-                  className="px-2.5 py-1 text-xs rounded-md bg-emerald-600/80 hover:bg-emerald-600 text-white transition-colors font-medium"
-                  title="メンバーを追加"
-                >
-                  ＋ 追加
-                </button>
+            <div className="mb-3 shrink-0 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
+                  メンバー一覧 ({members.length})
+                </h3>
+                <div className="flex gap-1">
+                  {onAddMember && (
+                    <button
+                      onClick={onAddMember}
+                      className="px-2.5 py-1 text-xs rounded-md bg-emerald-600/80 hover:bg-emerald-600 text-white transition-colors font-medium"
+                      title="メンバーを追加"
+                    >
+                      ＋ 追加
+                    </button>
+                  )}
+                  {onAddMultipleMembers && (
+                    <button
+                      onClick={() => setShowBulkAdd((v) => !v)}
+                      className="px-2.5 py-1 text-xs rounded-md bg-blue-600/80 hover:bg-blue-600 text-white transition-colors font-medium"
+                      title="一括追加"
+                    >
+                      ＋ 一括
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {showBulkAdd && onAddMultipleMembers && (
+                <div className="p-3 rounded-md bg-slate-800/60 border border-slate-700/60 space-y-2">
+                  <p className="text-xs font-semibold text-slate-300">
+                    一括追加
+                  </p>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">
+                        パート
+                      </label>
+                      <select
+                        value={bulkAddPart}
+                        onChange={(e) => setBulkAddPart(e.target.value)}
+                        className="w-full rounded bg-slate-700/40 border border-slate-600 px-2 py-1 text-xs text-slate-200"
+                      >
+                        {PART_LIST.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="text-[10px] text-slate-400 block mb-1">
+                          開始番号
+                        </label>
+                        <input
+                          type="number"
+                          value={bulkAddStartNum}
+                          onChange={(e) =>
+                            setBulkAddStartNum(Number(e.target.value))
+                          }
+                          min={1}
+                          className="w-full rounded bg-slate-700/40 border border-slate-600 px-2 py-1 text-xs text-slate-200"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] text-slate-400 block mb-1">
+                          人数
+                        </label>
+                        <input
+                          type="number"
+                          value={bulkAddCount}
+                          onChange={(e) =>
+                            setBulkAddCount(Number(e.target.value))
+                          }
+                          min={1}
+                          max={50}
+                          className="w-full rounded bg-slate-700/40 border border-slate-600 px-2 py-1 text-xs text-slate-200"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={handleBulkAdd}
+                        className="flex-1 px-3 py-1.5 text-xs rounded-md bg-emerald-600/80 hover:bg-emerald-600 text-white transition-colors"
+                      >
+                        追加
+                      </button>
+                      <button
+                        onClick={() => setShowBulkAdd(false)}
+                        className="flex-1 px-3 py-1.5 text-xs rounded-md bg-slate-700/40 hover:bg-slate-700/60 text-slate-200 transition-colors"
+                      >
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
 
             {/* メンバーリスト（スクロール可能） */}
             <div className="flex-1 overflow-y-auto sidebar-scrollbar min-h-0">
               {members.length === 0 ? (
-                <div className="p-4 rounded-md bg-slate-800/30 border border-slate-700/40 border-dashed text-center">
-                  <p className="text-slate-400/80 text-sm">
-                    メンバーがいません
+                <div className="p-4 rounded-md bg-slate-800/30 border border-slate-700/40 border-dashed text-center space-y-3">
+                  <p className="text-slate-300 text-sm">
+                    まだメンバーがいません。
+                  </p>
+                  <p className="text-slate-400/80 text-xs leading-relaxed">
+                    「メンバーを追加」で1人ずつ追加するか、
+                    <br />
+                    一括追加ボタンからパートと人数をまとめて登録できます。
                   </p>
                   {onAddMember && (
                     <button

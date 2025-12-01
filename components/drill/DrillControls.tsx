@@ -5,7 +5,7 @@ import { useState } from "react";
 import { SnapModeToggle, type SnapMode } from "@/components/ui/snap-mode-toggle";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
-type TabType = "set" | "arrangement";
+type TabType = "set" | "arrangement" | "text";
 
 type SetSummary = {
   id: string;
@@ -51,6 +51,14 @@ type Props = {
   confirmedCounts?: number[]; // 確定済みカウントのリスト
   currentCount?: number; // 現在のカウント
   onJumpToCount?: (count: number) => void; // カウントにジャンプする関数
+
+  // テキスト編集
+  currentNote?: string;
+  currentInstructions?: string;
+  currentNextMove?: string;
+  onChangeNote?: (value: string) => void;
+  onChangeInstructions?: (value: string) => void;
+  onChangeNextMove?: (value: string) => void;
 };
 
 export default function DrillControls({
@@ -83,6 +91,12 @@ export default function DrillControls({
   confirmedCounts = [],
   currentCount,
   onJumpToCount,
+  currentNote = "",
+  currentInstructions = "",
+  currentNextMove = "",
+  onChangeNote,
+  onChangeInstructions,
+  onChangeNextMove,
 }: Props) {
   const { t } = useTranslation();
   const currentSet = sets.find((s) => s.id === currentSetId) ?? sets[0];
@@ -130,6 +144,16 @@ export default function DrillControls({
         >
           整列・変形
         </button>
+        <button
+          onClick={() => setActiveTab("text")}
+          className={`flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
+            activeTab === "text"
+              ? "text-emerald-400 border-b-2 border-emerald-400 bg-slate-800/60"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          テキスト
+        </button>
       </div>
 
       {/* コンテンツエリア */}
@@ -155,10 +179,10 @@ export default function DrillControls({
       {currentSet && (
         <div className="rounded-lg bg-gradient-to-br from-slate-800/60 to-slate-900/60 border border-slate-700/80 p-4 shadow-lg backdrop-blur-sm">
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-slate-400/90 uppercase tracking-wider">{t("set.current")}</span>
               <select
-                className="flex-1 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
+                className="flex-1 min-w-0 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
                 value={currentSetId}
                 onChange={(e) => onChangeCurrentSet(e.target.value)}
               >
@@ -172,13 +196,13 @@ export default function DrillControls({
 
             {/* セット名編集 */}
             {onChangeSetName && (
-              <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">
                   {t("set.name")}
                 </label>
                 <input
                   type="text"
-                  className="flex-1 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
+                  className="flex-1 min-w-0 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
                   value={currentSet.name}
                   onChange={(e) => onChangeSetName(currentSetId, e.target.value)}
                   placeholder="Set 1"
@@ -350,7 +374,7 @@ export default function DrillControls({
         </div>
       )}
           </>
-        ) : (
+        ) : activeTab === "arrangement" ? (
           <>
             {/* 整列・ベジェ操作 */}
             <div className="rounded-lg bg-gradient-to-br from-slate-800/40 to-slate-900/40 border border-slate-700/60 p-3 space-y-2">
@@ -526,6 +550,78 @@ export default function DrillControls({
                   フィールドをクリックすると、選択されたメンバーを順番に配置します。
                 </p>
               )}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* テキスト情報 */}
+            <div className="rounded-lg bg-gradient-to-br from-slate-800/60 to-slate-900/60 border border-slate-700/80 p-4 shadow-lg backdrop-blur-sm space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  セット情報
+                </h3>
+                <span className="text-xs text-slate-400 font-mono">
+                  Count {currentSet.startCount}
+                </span>
+              </div>
+
+              {/* Note（メモ） */}
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  メモ
+                </label>
+                <textarea
+                  value={currentNote}
+                  onChange={(e) => onChangeNote?.(e.target.value)}
+                  placeholder="セットのメモを入力..."
+                  rows={3}
+                  className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner resize-none"
+                />
+              </div>
+
+              {/* Instructions（指示） */}
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  指示・動き方
+                </label>
+                <textarea
+                  value={currentInstructions}
+                  onChange={(e) => onChangeInstructions?.(e.target.value)}
+                  placeholder="このセットでの動き方、指示を入力..."
+                  rows={4}
+                  className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner resize-none"
+                />
+              </div>
+
+              {/* Next Move（次の動き） */}
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider">
+                  次のセットへの移動
+                </label>
+                <textarea
+                  value={currentNextMove}
+                  onChange={(e) => onChangeNextMove?.(e.target.value)}
+                  placeholder="次のセットへの移動方法、カウント数..."
+                  rows={3}
+                  className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner resize-none"
+                />
+              </div>
+
+              {/* セット情報のサマリー */}
+              <div className="pt-3 mt-3 border-t border-slate-700/60 space-y-2">
+                <div className="text-xs text-slate-400">
+                  <p className="mb-1">
+                    <span className="text-slate-500">開始カウント:</span>{" "}
+                    <span className="font-mono text-slate-300">
+                      {currentSet.startCount}
+                    </span>
+                  </p>
+                  <p>
+                    <span className="text-slate-500">セット名:</span>{" "}
+                    <span className="text-slate-300">{currentSet.name}</span>
+                  </p>
+                </div>
+              </div>
             </div>
           </>
         )}

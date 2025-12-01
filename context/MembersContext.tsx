@@ -26,19 +26,13 @@ export const MembersProvider = ({ children }: { children: React.ReactNode }) => 
   // ローカルストレージから読み込み（初回のみ）
   const [members, setMembersState] = useState<Member[]>(() => {
     if (typeof window === "undefined") {
-      return [
-        { id: "M1", name: "Flute 1", part: "Flute", color: "#3498db" },
-        { id: "M2", name: "Trumpet 1", part: "Trumpet", color: "#e74c3c" },
-        { id: "M3", name: "Trombone 1", part: "Trombone", color: "#2ecc71" },
-      ];
+      // SSR時は常に空の状態から開始（「白紙のドリル用紙」イメージ）
+      return [];
     }
     
     const saved = loadMembersFromLocalStorage();
-    return saved || [
-      { id: "M1", name: "Flute 1", part: "Flute", color: "#3498db" },
-      { id: "M2", name: "Trumpet 1", part: "Trumpet", color: "#e74c3c" },
-      { id: "M3", name: "Trombone 1", part: "Trombone", color: "#2ecc71" },
-    ];
+    // 保存されたデータがなければ完全に空からスタート
+    return saved || [];
   });
 
   const setMembers = (fnOrValue: (prev: Member[]) => Member[] | Member[]) => {

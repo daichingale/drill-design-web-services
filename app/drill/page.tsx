@@ -21,6 +21,7 @@ import Timeline from "@/components/drill/Timeline";
 import { useDrillSets } from "@/hooks/useDrillSets";
 import { useDrillPlayback } from "@/hooks/useDrillPlayback";
 import type { WorldPos } from "@/lib/drill/types";
+import type { Member } from "@/context/MembersContext";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import {
   loadDrillFromLocalStorage,
@@ -38,6 +39,11 @@ import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
 import CommandPalette, { type Command } from "@/components/drill/CommandPalette";
 import { useMenu } from "@/context/MenuContext";
 import { useTranslation } from "@/lib/i18n/useTranslation";
+import { useClipboard } from "@/context/ClipboardContext";
+import { useKeyboardShortcuts, type ShortcutDefinition } from "@/hooks/useKeyboardShortcuts";
+import ShortcutHelpDialog from "@/components/ShortcutHelpDialog";
+import { addGlobalNotification } from "@/components/ErrorNotification";
+import { useShortcuts } from "@/context/ShortcutContext";
 
 // UiSet型はlib/drill/uiTypes.tsからインポートするため、ここでは定義しない
 
@@ -47,10 +53,27 @@ type EditorState = {
   currentSetId: string;
 };
 
+type LineEditState = {
+  memberIds: string[];
+  start: WorldPos;
+  end: WorldPos;
+} | null;
+
+type BoxEditState = {
+  memberIds: string[];
+  cols: number;
+  rows: number;
+  // 四隅のワールド座標
+  tl: WorldPos; // top-left
+  tr: WorldPos; // top-right
+  br: WorldPos; // bottom-right
+  bl: WorldPos; // bottom-left
+} | null;
+
 export default function DrillPage() {
   const { t } = useTranslation();
   const { members, setMembers } = useMembers();
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const { setMenuGroups, setOpenCommandPalette } = useMenu();
   const [isMounted, setIsMounted] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -62,6 +85,15 @@ export default function DrillPage() {
   const [drillDataName, setDrillDataName] = useState<string>("");
   const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
   const [drillDbId, setDrillDbId] = useState<string | null>(null); // データベースのドリルID
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [pendingNewMembers, setPendingNewMembers] = useState<Member[] | null>(null);
+  const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
+  const [lineEditState, setLineEditState] = useState<LineEditState>(null);
+  const [boxEditState, setBoxEditState] = useState<BoxEditState>(null);
+  const [confirmedCountsCollapsed, setConfirmedCountsCollapsed] = useState(false);
+  
+  // クリップボード機能
+  const { copyToClipboard, pasteFromClipboard } = useClipboard();
 
   // クライアント側でのみマウントされたことを確認
   useEffect(() => {
@@ -281,8 +313,8 @@ export default function DrillPage() {
     autoSaveDrill,
   });
 
-  // 再生テンポ（BPM）の状態管理
-  const [playbackBPM, setPlaybackBPM] = useState<number>(120); // デフォルトはBPM=120
+  // 再生テンポ（BPM）は設定から取得
+  const playbackBPM = settings.playbackBPM;
 
   // 再生系
   const {
@@ -449,11 +481,16 @@ export default function DrillPage() {
     }
   }, [defaultScale, canvasScale, setZoom]);
 
-  const hasPlayback = Object.keys(playbackPositions).length > 0;
-  // 一時的な位置がある場合はそれを優先、なければ通常の位置を使用
+  // 再生中のみ playbackPositions を表示に使う（停止中は通常のSET位置を使う）
+  const hasPlayback = isPlaying && Object.keys(playbackPositions).length > 0;
+  // 一時的な位置がある場合は「現在のSETの位置」に上書きする形で表示し、
+  // 存在しないメンバーが消えて見えないようにする
+  const basePositionsForDisplay = currentSet.positions as Record<string, WorldPos>;
   const displayPositions: Record<string, WorldPos> = hasPlayback
     ? playbackPositions
-    : pendingPositions || currentSet.positions;
+    : pendingPositions
+    ? { ...basePositionsForDisplay, ...pendingPositions }
+    : basePositionsForDisplay;
 
   const activeArc =
     arcBinding && arcBinding.setId === currentSetId ? arcBinding : null;
@@ -589,6 +626,298 @@ export default function DrillPage() {
       const set = sets.find(s => s.id === setId);
       return set?.positions || {};
     },
+  });
+
+  // コピー機能（選択メンバーの位置をクリップボードに保存）
+  const handleCopy = useCallback(() => {
+    if (selectedIds.length === 0) {
+      addGlobalNotification({
+        type: "warning",
+        message: "コピーするメンバーを選択してください",
+      });
+      return;
+    }
+
+    const currentSet = sets.find((s) => s.id === currentSetId);
+    if (!currentSet) return;
+
+    const positionsToCopy: Record<string, WorldPos> = {};
+    selectedIds.forEach((id) => {
+      if (currentSet.positions[id]) {
+        positionsToCopy[id] = { ...currentSet.positions[id] };
+      }
+    });
+
+    copyToClipboard({
+      type: "members",
+      positions: positionsToCopy,
+      memberIds: selectedIds,
+    });
+
+    addGlobalNotification({
+      type: "success",
+      message: `${selectedIds.length}個のメンバーをコピーしました`,
+    });
+  }, [selectedIds, sets, currentSetId, copyToClipboard]);
+
+  // ペースト機能（クリップボードから位置を貼り付け）
+  const handlePaste = useCallback(() => {
+    const clipboardData = pasteFromClipboard();
+    if (!clipboardData || clipboardData.type !== "members") {
+      addGlobalNotification({
+        type: "warning",
+        message: "クリップボードにコピーされたデータがありません",
+      });
+      return;
+    }
+
+    if (clipboardData.memberIds.length === 0) {
+      addGlobalNotification({
+        type: "warning",
+        message: "コピーされたデータにメンバーが含まれていません",
+      });
+      return;
+    }
+
+    // 現在のセットに位置を貼り付け
+    const updatedSets = sets.map((set) => {
+      if (set.id !== currentSetId) return set;
+      return {
+        ...set,
+        positions: {
+          ...set.positions,
+          ...clipboardData.positions,
+        },
+      };
+    });
+
+    restoreState(updatedSets, clipboardData.memberIds, currentSetId);
+    addGlobalNotification({
+      type: "success",
+      message: `${clipboardData.memberIds.length}個のメンバーを貼り付けました`,
+    });
+  }, [sets, currentSetId, pasteFromClipboard, restoreState]);
+
+  // 削除機能（選択メンバーをドリル全体から削除）
+  const handleDelete = useCallback(() => {
+    if (selectedIds.length === 0) {
+      addGlobalNotification({
+        type: "warning",
+        message: "削除するメンバーを選択してください",
+      });
+      return;
+    }
+
+    const ok = window.confirm(
+      `選択中のメンバー（${selectedIds.length}人）を削除します。\n` +
+      `このドリル内のすべてのセットから、これらのメンバーの位置情報が削除されます。\n\n` +
+      `本当に削除してもよろしいですか？`
+    );
+    if (!ok) return;
+
+    // メンバーリストからも削除
+    setMembers((prev) => prev.filter((m) => !selectedIds.includes(m.id)));
+
+    // すべてのセットから、該当メンバーの位置情報を削除
+    const updatedSets = sets.map((set) => {
+      const newPositions = { ...set.positions };
+      selectedIds.forEach((id) => {
+        delete newPositions[id];
+      });
+
+      let newPositionsByCount = set.positionsByCount;
+      if (set.positionsByCount) {
+        const updatedByCount: typeof set.positionsByCount = {};
+        Object.entries(set.positionsByCount).forEach(([countKey, posMap]) => {
+          const newMap = { ...posMap };
+          selectedIds.forEach((id) => {
+            delete newMap[id];
+          });
+          // 全て消えたカウントはスキップ
+          if (Object.keys(newMap).length > 0) {
+            updatedByCount![Number(countKey)] = newMap;
+          }
+        });
+        newPositionsByCount = updatedByCount;
+      }
+
+      return {
+        ...set,
+        positions: newPositions,
+        positionsByCount: newPositionsByCount,
+      };
+    });
+
+    restoreState(updatedSets, [], currentSetId);
+    addGlobalNotification({
+      type: "success",
+      message: `${selectedIds.length}個のメンバーを削除しました`,
+    });
+  }, [selectedIds, sets, currentSetId, restoreState, setMembers]);
+
+  // 全選択解除
+  const handleDeselectAll = useCallback(() => {
+    handleSelectBulk([]);
+  }, [handleSelectBulk]);
+
+  // 確定カウントやタイムラインバーから安全にジャンプするためのヘルパー
+  const handleJumpToCountSafe = useCallback(
+    (count: number) => {
+      if (pendingPositions && !isPlaying) {
+        const confirmed = window.confirm(
+          '位置を変更しましたが、まだ保存していません。\n' +
+            'このままカウントを変更すると、変更が失われます。\n\n' +
+            'OKを押すと変更を破棄してカウントを変更します。\n' +
+            'キャンセルを押すとカウント変更を中止します。'
+        );
+
+        if (!confirmed) {
+          return;
+        } else {
+          setPendingPositions(null);
+          setLineEditState(null);
+          setBoxEditState(null);
+        }
+      }
+      clearPlaybackView();
+      handleScrub(count);
+    },
+    [pendingPositions, isPlaying, clearPlaybackView, handleScrub]
+  );
+
+  // セット切り替え（前/次）
+  const handleSetPrevious = useCallback(() => {
+    const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const currentIndex = sortedSets.findIndex((s) => s.id === currentSetId);
+    if (currentIndex > 0) {
+      setCurrentSetId(sortedSets[currentIndex - 1].id);
+      handleSelectBulk([]);
+    }
+  }, [sets, currentSetId, setCurrentSetId, handleSelectBulk]);
+
+  const handleSetNext = useCallback(() => {
+    const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const currentIndex = sortedSets.findIndex((s) => s.id === currentSetId);
+    if (currentIndex < sortedSets.length - 1) {
+      setCurrentSetId(sortedSets[currentIndex + 1].id);
+      handleSelectBulk([]);
+    }
+  }, [sets, currentSetId, setCurrentSetId, handleSelectBulk]);
+
+  // グリッド表示切り替え
+  const handleToggleGrid = useCallback(() => {
+    updateSettings({ showGrid: !settings.showGrid });
+  }, [settings.showGrid, updateSettings]);
+
+  // ショートカットカスタマイズ機能
+  const { getShortcut } = useShortcuts();
+
+  // ショートカット定義（カスタマイズ可能）
+  const shortcutDefinitions: ShortcutDefinition[] = useMemo(
+    () => [
+      {
+        id: "copy",
+        keys: getShortcut("copy"),
+        action: handleCopy,
+        description: "選択メンバーをコピー",
+        category: "編集",
+      },
+      {
+        id: "paste",
+        keys: getShortcut("paste"),
+        action: handlePaste,
+        description: "クリップボードから貼り付け",
+        category: "編集",
+      },
+      {
+        id: "delete",
+        keys: getShortcut("delete"),
+        action: handleDelete,
+        description: "選択メンバーを削除",
+        category: "編集",
+      },
+      {
+        id: "backspace",
+        keys: getShortcut("backspace"),
+        action: handleDelete,
+        description: "選択メンバーを削除",
+        category: "編集",
+      },
+      {
+        id: "deselect-all",
+        keys: getShortcut("deselectAll"),
+        action: handleDeselectAll,
+        description: "全選択解除",
+        category: "選択",
+      },
+      {
+        id: "set-previous",
+        keys: getShortcut("setPrevious"),
+        action: handleSetPrevious,
+        description: "前のセットに切り替え",
+        category: "セット操作",
+      },
+      {
+        id: "set-next",
+        keys: getShortcut("setNext"),
+        action: handleSetNext,
+        description: "次のセットに切り替え",
+        category: "セット操作",
+      },
+      {
+        id: "zoom-in",
+        keys: getShortcut("zoomIn"),
+        action: handleZoomIn,
+        description: "ズームイン",
+        category: "表示",
+      },
+      {
+        id: "zoom-in-plus",
+        keys: { key: "+", ctrl: true },
+        action: handleZoomIn,
+        description: "ズームイン",
+        category: "表示",
+      },
+      {
+        id: "zoom-out",
+        keys: getShortcut("zoomOut"),
+        action: handleZoomOut,
+        description: "ズームアウト",
+        category: "表示",
+      },
+      {
+        id: "toggle-grid",
+        keys: getShortcut("toggleGrid"),
+        action: handleToggleGrid,
+        description: "グリッド表示の切り替え",
+        category: "表示",
+      },
+      {
+        id: "shortcut-help",
+        keys: getShortcut("shortcutHelp"),
+        action: () => setShortcutHelpOpen(true),
+        description: "ショートカットヘルプを表示",
+        category: "ヘルプ",
+      },
+    ],
+    [
+      getShortcut,
+      handleCopy,
+      handlePaste,
+      handleDelete,
+      handleDeselectAll,
+      handleSetPrevious,
+      handleSetNext,
+      handleZoomIn,
+      handleZoomOut,
+      handleToggleGrid,
+    ]
+  );
+
+  // キーボードショートカットを有効化
+  useKeyboardShortcuts({
+    enabled: !commandPaletteOpen && !isMetadataDialogOpen,
+    shortcuts: shortcutDefinitions,
   });
 
   // コマンドパレット用のコマンドリスト
@@ -729,6 +1058,23 @@ export default function DrillPage() {
     {
       label: "ファイル",
       items: [
+        {
+          label: "ドリルを新規作成",
+          icon: "🆕",
+          action: () => {
+            const ok = confirm(
+              "新しいドリルを作成しますか？\n\n現在のドリルの内容（ローカル保存分を含む）は失われます。"
+            );
+            if (!ok) return;
+
+            // ローカルのドリル・メンバー・メタデータをクリアしてリロード
+            clearDrillFromLocalStorage();
+            clearMembersFromLocalStorage();
+            clearDrillMetadata();
+            window.location.href = "/drill";
+          },
+        },
+        { divider: true },
         {
           label: "保存（ローカル）",
           icon: "💾",
@@ -926,7 +1272,7 @@ export default function DrillPage() {
     });
   };
 
-  // 位置を確定する関数
+  // 位置を確定する関数（pendingPositions → positionsByCount への書き込み）
   const handleConfirmPositions = useCallback(() => {
     if (!pendingPositions) return;
     
@@ -947,6 +1293,12 @@ export default function DrillPage() {
       
       return {
         ...set,
+        // 現在表示中のSETの「ベース位置」も、確定した pendingPositions に合わせて更新
+        // これにより pendingPositions をクリアしたあともメンバーが見え続ける
+        positions: {
+          ...set.positions,
+          ...pendingPositions,
+        },
         positionsByCount: newPositionsByCount,
       };
     });
@@ -956,7 +1308,15 @@ export default function DrillPage() {
     
     // 一時的な位置をクリア
     setPendingPositions(null);
-  }, [pendingPositions, currentCount, currentSetId, sets, selectedIds, restoreState]);
+    setLineEditState(null);
+    setBoxEditState(null);
+
+    // ユーザー向けフィードバック
+    addGlobalNotification({
+      type: "success",
+      message: "位置を確定しました。",
+    });
+  }, [pendingPositions, currentCount, currentSetId, sets, selectedIds, restoreState, setLineEditState, setBoxEditState]);
 
   const handleSelectBulkWrapped = (ids: string[]) => {
     clearPlaybackView();
@@ -967,6 +1327,241 @@ export default function DrillPage() {
     clearPlaybackView();
     nudgeSelected(dx, dy);
   };
+
+  // じっくりモード用：一括追加直後の初期配置レイアウト確定
+  const handleConfirmNewMembersLayout = useCallback(
+    (layout: "line" | "circle" | "box") => {
+      if (!pendingNewMembers || pendingNewMembers.length === 0) {
+        setIsLayoutModalOpen(false);
+        return;
+      }
+
+      const newIds = pendingNewMembers.map((m) => m.id);
+
+      const current = sets.find((s) => s.id === currentSetId);
+      if (!current) {
+        setPendingNewMembers(null);
+        setIsLayoutModalOpen(false);
+        return;
+      }
+
+      const centerX = settings.fieldWidth / 2;
+      const centerY = settings.fieldHeight / 2;
+
+      const basePositions: Record<string, WorldPos> =
+        pendingPositions || currentSet.positions;
+
+      const newPositionsPatch: Record<string, WorldPos> = {};
+
+      if (layout === "line") {
+        const n = newIds.length;
+        const margin = 5;
+        const startX = margin;
+        const endX = settings.fieldWidth - margin;
+        const step = n > 1 ? (endX - startX) / (n - 1) : 0;
+        const y = centerY;
+        newIds.forEach((id, idx) => {
+          const raw = { x: startX + step * idx, y };
+          newPositionsPatch[id] = clampAndSnap(raw);
+        });
+      } else if (layout === "circle") {
+        const n = newIds.length;
+        const radius = Math.min(settings.fieldWidth, settings.fieldHeight) / 6;
+        newIds.forEach((id, idx) => {
+          const angle = (idx / Math.max(n, 1)) * Math.PI * 2;
+          const raw = {
+            x: centerX + Math.cos(angle) * radius,
+            y: centerY + Math.sin(angle) * radius,
+          };
+          newPositionsPatch[id] = clampAndSnap(raw);
+        });
+      } else if (layout === "box") {
+        const n = newIds.length;
+        const cols = Math.ceil(Math.sqrt(n));
+        const rows = Math.ceil(n / cols);
+        const spacing = 2 * STEP_M;
+
+        const totalWidth = (cols - 1) * spacing;
+        const totalHeight = (rows - 1) * spacing;
+        const startX = centerX - totalWidth / 2;
+        const startY = centerY - totalHeight / 2;
+
+        newIds.forEach((id, index) => {
+          const row = Math.floor(index / cols);
+          const col = index % cols;
+          const raw = {
+            x: startX + col * spacing,
+            y: startY + row * spacing,
+          };
+          newPositionsPatch[id] = clampAndSnap(raw);
+        });
+
+        // ボックス用編集状態（四隅）も保存
+        const tl: WorldPos = { x: startX, y: startY };
+        const tr: WorldPos = { x: startX + totalWidth, y: startY };
+        const bl: WorldPos = { x: startX, y: startY + totalHeight };
+        const br: WorldPos = { x: startX + totalWidth, y: startY + totalHeight };
+
+        setBoxEditState({
+          memberIds: newIds,
+          cols,
+          rows,
+          tl,
+          tr,
+          br,
+          bl,
+        });
+      }
+
+      // pendingPositions に新しいレイアウトを反映（まだ確定しない）
+      const combinedPositions: Record<string, WorldPos> = {
+        ...basePositions,
+        ...newPositionsPatch,
+      };
+      setPendingPositions(combinedPositions);
+
+      // ラインレイアウトの場合は端点ハンドル用の状態も保存
+      if (layout === "line") {
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let y = centerY;
+        newIds.forEach((id) => {
+          const p = combinedPositions[id];
+          if (!p) return;
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          y = p.y;
+        });
+        if (isFinite(minX) && isFinite(maxX)) {
+          setLineEditState({
+            memberIds: newIds,
+            start: { x: minX, y },
+            end: { x: maxX, y },
+          });
+        }
+      } else {
+        setLineEditState(null);
+      }
+
+      // メンバー本体はこのタイミングで登録
+      setMembers((prev) => [...prev, ...pendingNewMembers]);
+
+      setPendingNewMembers(null);
+      setIsLayoutModalOpen(false);
+    },
+    [
+      pendingNewMembers,
+      sets,
+      currentSetId,
+      settings.fieldWidth,
+      settings.fieldHeight,
+      clampAndSnap,
+      pendingPositions,
+      setMembers,
+      setPendingNewMembers,
+      setIsLayoutModalOpen,
+      setPendingPositions,
+      setLineEditState,
+      setBoxEditState,
+    ]
+  );
+
+  // 横一列レイアウトの端点更新（ハンドルドラッグ時）
+  const handleUpdateLineEdit = useCallback(
+    (start: WorldPos, end: WorldPos) => {
+      if (!lineEditState || !pendingPositions) return;
+      const ids = lineEditState.memberIds;
+      const n = ids.length;
+      if (n === 0) return;
+
+      const newPatch: Record<string, WorldPos> = {};
+      // 端点はスナップ付きで決定
+      const snappedStart = clampAndSnap(start);
+      const snappedEnd = clampAndSnap(end);
+
+      ids.forEach((id, index) => {
+        const t = n > 1 ? index / (n - 1) : 0;
+        const x = snappedStart.x + (snappedEnd.x - snappedStart.x) * t;
+        const y = snappedStart.y + (snappedEnd.y - snappedStart.y) * t;
+        // 中間メンバーはスナップせず、そのままのインターバルを維持
+        // ただしフィールド外には出さない
+        const clamped: WorldPos = {
+          x: Math.min(Math.max(x, 0), settings.fieldWidth),
+          y: Math.min(Math.max(y, 0), settings.fieldHeight),
+        };
+        newPatch[id] = clamped;
+      });
+
+      setPendingPositions({
+        ...pendingPositions,
+        ...newPatch,
+      });
+      setLineEditState({
+        memberIds: ids,
+        start: snappedStart,
+        end: snappedEnd,
+      });
+    },
+    [lineEditState, pendingPositions, clampAndSnap, settings.fieldWidth, settings.fieldHeight]
+  );
+
+  // ボックスレイアウトの四隅更新（ハンドルドラッグ時）
+  const handleUpdateBoxEdit = useCallback(
+    (corners: { tl: WorldPos; tr: WorldPos; br: WorldPos; bl: WorldPos }) => {
+      if (!boxEditState || !pendingPositions) return;
+      const { memberIds, cols, rows } = boxEditState;
+      if (!cols || !rows) return;
+
+      // 端点はスナップしつつ、内側は比率で補間（スナップなし）してインターバル維持
+      const tl = clampAndSnap(corners.tl);
+      const tr = clampAndSnap(corners.tr);
+      const br = clampAndSnap(corners.br);
+      const bl = clampAndSnap(corners.bl);
+
+      const newPatch: Record<string, WorldPos> = {};
+
+      memberIds.forEach((id, index) => {
+        const row = Math.floor(index / cols);
+        const col = index % cols;
+        const u = cols > 1 ? col / (cols - 1) : 0; // 横方向 0〜1
+        const v = rows > 1 ? row / (rows - 1) : 0; // 縦方向 0〜1
+
+        // 4隅からの二重線形補間（平行四辺形内の位置）
+        const x =
+          tl.x * (1 - u) * (1 - v) +
+          tr.x * u * (1 - v) +
+          br.x * u * v +
+          bl.x * (1 - u) * v;
+        const y =
+          tl.y * (1 - u) * (1 - v) +
+          tr.y * u * (1 - v) +
+          br.y * u * v +
+          bl.y * (1 - u) * v;
+
+        const clamped: WorldPos = {
+          x: Math.min(Math.max(x, 0), settings.fieldWidth),
+          y: Math.min(Math.max(y, 0), settings.fieldHeight),
+        };
+        newPatch[id] = clamped;
+      });
+
+      setPendingPositions({
+        ...pendingPositions,
+        ...newPatch,
+      });
+
+      setBoxEditState({
+        memberIds,
+        cols,
+        rows,
+        tl,
+        tr,
+        br,
+        bl,
+      });
+    },
+    [boxEditState, pendingPositions, clampAndSnap, settings.fieldWidth, settings.fieldHeight]
+  );
 
   // 音楽とドリルの再生を同期（音楽の時間からカウントを計算）
   useEffect(() => {
@@ -1041,6 +1636,13 @@ export default function DrillPage() {
         return;
       }
 
+      // Enter: 位置確定（pendingPositions がある場合）
+      if (e.key === "Enter" && pendingPositions) {
+        e.preventDefault();
+        handleConfirmPositions();
+        return;
+      }
+
       // Ctrl / Cmd + A : 全選択
       const isSelectAllKey =
         (e.key === "a" || e.key === "A") && (e.ctrlKey || e.metaKey);
@@ -1112,16 +1714,86 @@ export default function DrillPage() {
     handleSave,
     musicState.isLoaded,
     syncCurrentTime,
-    currentCount,
+    pendingPositions,
+    handleConfirmPositions,
   ]);
 
   return (
     <>
+      {/* じっくりモード用：一括追加後のレイアウト選択モーダル */}
+      {isLayoutModalOpen && pendingNewMembers && settings.memberAddMode === "careful" && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            setPendingNewMembers(null);
+            setIsLayoutModalOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold text-slate-100">
+              メンバーの初期配置を選択
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              今回追加するメンバー
+              <span className="font-mono text-slate-200"> {pendingNewMembers.length}人</span>
+              を、どのような並びで最初に配置するか選んでください。
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                onClick={() => handleConfirmNewMembersLayout("line")}
+                className="flex items-center justify-between px-3 py-2 rounded-md bg-slate-800/70 hover:bg-slate-700/80 border border-slate-600/70 hover:border-emerald-500/60 text-slate-100 text-sm transition-colors"
+              >
+                <span>横一列に並べる</span>
+                <span className="text-xs text-slate-400">フィールド中央付近に横一列</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmNewMembersLayout("circle")}
+                className="flex items-center justify-between px-3 py-2 rounded-md bg-slate-800/70 hover:bg-slate-700/80 border border-slate-600/70 hover:border-emerald-500/60 text-slate-100 text-sm transition-colors"
+              >
+                <span>円形に並べる</span>
+                <span className="text-xs text-slate-400">中央を中心とした円形フォーメーション</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmNewMembersLayout("box")}
+                className="flex items-center justify-between px-3 py-2 rounded-md bg-slate-800/70 hover:bg-slate-700/80 border border-slate-600/70 hover:border-emerald-500/60 text-slate-100 text-sm transition-colors"
+              >
+                <span>ボックス（グリッド）に並べる</span>
+                <span className="text-xs text-slate-400">縦横に詰めたブロック隊形</span>
+              </button>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingNewMembers(null);
+                  setIsLayoutModalOpen(false);
+                }}
+                className="px-3 py-1.5 text-xs rounded-md bg-slate-700/60 hover:bg-slate-700/80 text-slate-200 transition-colors"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* コマンドパレット */}
       <CommandPalette
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
         commands={commands}
+      />
+
+      {/* ショートカットヘルプダイアログ */}
+      <ShortcutHelpDialog
+        shortcuts={shortcutDefinitions}
+        open={shortcutHelpOpen}
+        onClose={() => setShortcutHelpOpen(false)}
       />
 
       {/* 3Dプレビューモーダル */}
@@ -1266,25 +1938,13 @@ export default function DrillPage() {
                 onChangeSnapMode={setSnapMode}
                 confirmedCounts={confirmedCounts}
                 currentCount={hasPlayback ? undefined : currentCount}
-                onJumpToCount={(count) => {
-                  if (pendingPositions && !isPlaying) {
-                    const confirmed = window.confirm(
-                      '位置を変更しましたが、まだ保存していません。\n' +
-                      'このままカウントを変更すると、変更が失われます。\n\n' +
-                      'OKを押すと変更を破棄してカウントを変更します。\n' +
-                      'キャンセルを押すとカウント変更を中止します。'
-                    );
-                    
-                    if (!confirmed) {
-                      return; // カウント変更をキャンセル
-                    } else {
-                      // 変更を破棄
-                      setPendingPositions(null);
-                    }
-                  }
-                  clearPlaybackView();
-                  handleScrub(count);
-                }}
+                onJumpToCount={handleJumpToCountSafe}
+                currentNote={currentSet.note}
+                currentInstructions={currentSet.instructions}
+                currentNextMove={currentSet.nextMove}
+                onChangeNote={handleChangeNote}
+                onChangeInstructions={handleChangeInstructions}
+                onChangeNextMove={handleChangeNextMove}
               />
             </div>
           </div>
@@ -1319,71 +1979,17 @@ export default function DrillPage() {
                   individualPlacementMode={individualPlacementMode}
                   onPlaceMember={handlePlaceMember}
                   placementQueue={placementQueue}
+                  lineEditState={lineEditState}
+                  onUpdateLineEdit={handleUpdateLineEdit}
+                  boxEditState={boxEditState}
+                  onUpdateBoxEdit={handleUpdateBoxEdit}
                 />
             </div>
           </div>
 
           {/* 右サイドバー */}
           <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar max-md:hidden">
-            {/* ヘッダー部分（ドリルエディタ、2D録画、ズーム、メンバー、カウント） */}
-            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-3 shadow-xl space-y-3 shrink-0">
-              <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">
-                ドリルエディタ
-              </h2>
-              
-              {/* 2D録画ボタン */}
-              <button
-                onClick={handleRecord2D}
-                disabled={isRecording2D || isRecording3D}
-                className="w-full px-3 py-2 text-xs rounded-md bg-gradient-to-r from-red-600/90 to-red-700/90 hover:from-red-600 hover:to-red-700 text-white disabled:from-slate-700/30 disabled:to-slate-700/30 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-200 border border-red-500/50 shadow-md hover:shadow-lg disabled:shadow-none"
-                title="2D録画（自動的に再生を開始します）"
-              >
-                {isRecording2D ? "録画中..." : "2D録画"}
-              </button>
-              
-              {/* ズーム */}
-              <div className="space-y-1.5">
-                <div className="text-xs text-slate-400/90 uppercase tracking-wider">Zoom</div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleZoomOut}
-                    className="px-2.5 py-1.5 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 hover:border-slate-500/60 text-slate-300 hover:text-slate-100 transition-all duration-200 shadow-sm text-sm"
-                  >
-                    −
-                  </button>
-                  <span className="flex-1 px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded-md text-center text-slate-200 font-medium shadow-inner text-xs">
-                    {Math.round(canvasScale * 100)}%
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleZoomIn}
-                    className="px-2 py-1 rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 transition-colors text-sm"
-                  >
-                    ＋
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleZoomReset}
-                    className="px-2 py-1 text-[10px] rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 transition-colors"
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
-              
-              {/* ステータス表示 */}
-              <div className="flex flex-col gap-2 text-xs">
-                <div className="px-2.5 py-1.5 rounded-md bg-emerald-900/40 border border-emerald-500/60 text-emerald-200 text-center">
-                  Members: {isMounted ? members.length : 0}
-                </div>
-                <div className="px-2.5 py-1.5 rounded-md bg-slate-900/60 border border-slate-600 text-slate-300 text-center">
-                  Count: {isMounted ? Math.round(currentCount) : 0}
-                </div>
-              </div>
-            </div>
-
-            {/* SidePanel */}
+            {/* SidePanel（メンバー選択・管理） */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl overflow-hidden flex flex-col shrink-0">
               <DrillSidePanel
                 members={members as any}
@@ -1401,6 +2007,14 @@ export default function DrillPage() {
                       color: "#888888",
                     },
                   ]);
+                }}
+                onAddMultipleMembers={(newMembers) => {
+                  if (settings.memberAddMode === "careful") {
+                    setPendingNewMembers(newMembers as Member[]);
+                    setIsLayoutModalOpen(true);
+                  } else {
+                    setMembers((prev) => [...prev, ...(newMembers as Member[])]);
+                  }
                 }}
                 onDeleteMember={(id: string) => {
                   setMembers((prev) => prev.filter((m) => m.id !== id));
@@ -1441,33 +2055,163 @@ export default function DrillPage() {
                   </button>
                 </div>
               )}
-              {/* 確定カウントのリスト */}
+              {/* 確定カウントのリスト（折りたたみ可能）＋簡易タイムラインバー */}
               {confirmedCounts.length > 0 && !hasPlayback && (
-                <div className="p-3 border-t border-slate-700/60 bg-slate-800/40">
-                  <div className="mb-2 text-xs text-slate-300 font-semibold uppercase tracking-wider">
-                    確定済みカウント
-                  </div>
-                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                    {confirmedCounts.map((count) => (
-                      <div
-                        key={count}
-                        className="flex items-center justify-between px-2.5 py-1.5 rounded-md bg-emerald-900/30 border border-emerald-500/40"
-                      >
-                        <span className="text-xs text-emerald-200 font-mono">
-                          Count {count}
-                        </span>
-                        <button
-                          onClick={() => handleRemoveConfirmedPosition(count)}
-                          className="px-2 py-0.5 text-xs rounded bg-red-600/60 hover:bg-red-600/80 text-white transition-colors"
-                          title="確定を解除"
+                <div className="p-3 border-t border-slate-700/60 bg-slate-800/40 space-y-1.5">
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between text-xs text-slate-300 font-semibold uppercase tracking-wider"
+                    onClick={() => setConfirmedCountsCollapsed((v) => !v)}
+                  >
+                    <span>確定済みカウント</span>
+                    <span className="flex items-center gap-1 text-[11px] text-slate-400 font-normal">
+                      <span>
+                        {confirmedCounts.length}件
+                        {confirmedCounts.length > 0 &&
+                          `（${confirmedCounts
+                            .slice(0, 4)
+                            .map((c) => c)
+                            .join(", ")}${confirmedCounts.length > 4 ? "…" : ""}）`}
+                      </span>
+                      <span>{confirmedCountsCollapsed ? "▽" : "△"}</span>
+                    </span>
+                  </button>
+                  {/* 簡易タイムラインバー */}
+                  {confirmedCounts.length > 0 && (
+                    <div className="mt-1">
+                      {(() => {
+                        const minCount = Math.min(...confirmedCounts);
+                        const maxCount = Math.max(...confirmedCounts);
+                        const range = Math.max(1, maxCount - minCount);
+                        return (
+                          <div className="relative h-6 rounded-full bg-slate-900/80 border border-slate-700/80 px-2 flex items-center">
+                            {/* ベースライン */}
+                            <div className="absolute inset-x-2 h-[2px] bg-slate-600/60 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            {/* マーカー */}
+                            {confirmedCounts.map((count) => {
+                              const t = (count - minCount) / range;
+                              const left = 8 + t * (100 - 16); // padding相当
+                              const isCurrent =
+                                Math.round(currentCount) === Math.round(count);
+                              return (
+                                <button
+                                  key={`marker-${count}`}
+                                  type="button"
+                                  onClick={() => handleJumpToCountSafe(count)}
+                                  className="absolute -translate-x-1/2 -translate-y-1/2"
+                                  style={{ left: `${left}%`, top: "50%" }}
+                                  title={`Count ${count}`}
+                                >
+                                  <div
+                                    className={`w-2 h-2 rounded-full transition-colors ${
+                                      isCurrent
+                                        ? "bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.35)]"
+                                        : "bg-emerald-500/80 hover:bg-emerald-300"
+                                    }`}
+                                  />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  {!confirmedCountsCollapsed && (
+                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                      {confirmedCounts.map((count) => (
+                        <div
+                          key={count}
+                          className="flex items-center justify-between px-2.5 py-1.5 rounded-md bg-emerald-900/30 border border-emerald-500/40"
                         >
-                          解除
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                          <span className="text-xs text-emerald-200 font-mono">
+                            Count {count}
+                          </span>
+                          <button
+                            onClick={() => handleRemoveConfirmedPosition(count)}
+                            className="px-2 py-0.5 text-xs rounded bg-red-600/60 hover:bg-red-600/80 text-white transition-colors"
+                            title="確定を解除"
+                          >
+                            解除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
+            </div>
+
+            {/* ユーティリティ（ズーム・ステータス・録画） */}
+            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-3 shadow-xl space-y-3 shrink-0">
+              <h2 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">
+                ドリル情報
+              </h2>
+
+              {/* ズーム */}
+              <div className="space-y-1.5">
+                <div className="text-xs text-slate-400/90 uppercase tracking-wider">
+                  Zoom
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleZoomOut}
+                    className="px-2.5 py-1.5 rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/40 hover:border-slate-500/60 text-slate-300 hover:text-slate-100 transition-all duration-200 shadow-sm text-sm"
+                  >
+                    −
+                  </button>
+                  <span className="flex-1 px-3 py-1.5 bg-slate-800/60 border border-slate-700/60 rounded-md text-center text-slate-200 font-medium shadow-inner text-xs">
+                    {Math.round(canvasScale * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleZoomIn}
+                    className="px-2 py-1 rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 transition-colors text-sm"
+                  >
+                    ＋
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleZoomReset}
+                    className="px-2 py-1 text-[10px] rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 hover:text-slate-100 transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+
+              {/* ステータス表示 */}
+              <div className="flex flex-col gap-2 text-xs">
+                <div className="px-2.5 py-1.5 rounded-md bg-emerald-900/40 border border-emerald-500/60 text-emerald-200 text-center">
+                  Members: {isMounted ? members.length : 0}
+                </div>
+                <div className="px-2.5 py-1.5 rounded-md bg-slate-900/60 border border-slate-600 text-slate-300 text-center">
+                  Count: {isMounted ? Math.round(currentCount) : 0}
+                </div>
+              </div>
+
+              {/* 録画ボタン（最下部に横並び） */}
+              <div className="pt-2 mt-1 border-t border-slate-700/60">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    onClick={handleRecord2D}
+                    disabled={isRecording2D || isRecording3D}
+                    className="flex-1 px-3 py-1.5 text-[11px] rounded-md bg-gradient-to-r from-red-600/90 to-red-700/90 hover:from-red-600 hover:to-red-700 text-white disabled:from-slate-700/30 disabled:to-slate-700/30 disabled:text-slate-500 disabled:cursor-not-allowed transition-all duration-200 border border-red-500/50 shadow-md hover:shadow-lg disabled:shadow-none"
+                    title="2D録画（自動的に再生を開始します）"
+                  >
+                    {isRecording2D ? "2D録画中..." : "2D録画"}
+                  </button>
+                  <button
+                    onClick={() => setIs3DPreviewOpen(true)}
+                    disabled={isRecording2D || isRecording3D}
+                    className="flex-1 px-3 py-1.5 text-[11px] rounded-md bg-slate-700/60 hover:bg-slate-700/80 text-slate-100 disabled:bg-slate-800/40 disabled:text-slate-500 disabled:cursor-not-allowed border border-slate-600/60 hover:border-slate-500/80 transition-all duration-200"
+                    title="3Dプレビューを開いて録画"
+                  >
+                    {isRecording3D ? "3D録画中..." : "3Dプレビュー/録画"}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* 3Dプレビューを開くボタン */}
@@ -1511,7 +2255,7 @@ export default function DrillPage() {
                   onSyncCurrentTime={syncCurrentTime}
                   currentCount={currentCount}
                   playbackBPM={playbackBPM}
-                  onSetPlaybackBPM={setPlaybackBPM}
+                  onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
                 />
             </div>
           </div>

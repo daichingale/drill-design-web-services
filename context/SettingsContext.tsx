@@ -5,6 +5,8 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 
 export type DisplayUnit = "meter" | "yard" | "step";
 
+export type MemberAddMode = "quick" | "careful";
+
 export type Settings = {
   // フィールドサイズ
   fieldWidth: number; // メートル
@@ -20,6 +22,12 @@ export type Settings = {
   // 背景色
   backgroundColor: string;
   backgroundTransparent: boolean; // 背景を透過にするか
+  
+  // 再生設定
+  playbackBPM: number; // 再生速度（BPM）
+
+  // メンバー追加モード
+  memberAddMode: MemberAddMode;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -30,16 +38,19 @@ const DEFAULT_SETTINGS: Settings = {
   displayUnit: "meter",
   backgroundColor: "#ffffff", // 白色
   backgroundTransparent: false,
+  playbackBPM: 120, // デフォルトBPM
+  memberAddMode: "quick",
 };
 
 const STORAGE_KEY = "drill-settings";
 
-// ローカルストレージから設定を読み込む
+// ローカルストレージから設定を読み込む（クライアント専用）
 const loadSettingsFromStorage = (): Settings => {
   if (typeof window === "undefined") {
+    // サーバー側レンダリング時は必ずデフォルト値を返す
     return DEFAULT_SETTINGS;
   }
-  
+
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
@@ -78,7 +89,14 @@ type SettingsContextType = {
 const SettingsContext = createContext<SettingsContextType | null>(null);
 
 export const SettingsProvider = ({ children }: { children: React.ReactNode }) => {
-  const [settings, setSettings] = useState<Settings>(() => loadSettingsFromStorage());
+  // サーバー・クライアント初期レンダリングでは必ず同じ値（DEFAULT_SETTINGS）になるようにする
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+
+  // マウント後にローカルストレージから設定を読み込んで反映（クライアント側のみ）
+  useEffect(() => {
+    const storedSettings = loadSettingsFromStorage();
+    setSettings(storedSettings);
+  }, []);
 
   // 設定を更新
   const updateSettings = useCallback((updates: Partial<Settings>) => {
