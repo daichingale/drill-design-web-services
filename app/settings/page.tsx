@@ -84,9 +84,17 @@ export default function SettingsPage() {
 
       {/* フィールド設定セクション */}
       <section className="space-y-4">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-          フィールド設定
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+            フィールド設定
+          </h2>
+          <Link
+            href="/grid-editor"
+            className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+          >
+            グリッドエディタ →
+          </Link>
+        </div>
         <div className="rounded-2xl border border-slate-700 bg-slate-800/80 p-6 space-y-6">
           <div className="space-y-2">
             <label className="block text-sm font-medium text-slate-200">
@@ -296,6 +304,34 @@ export default function SettingsPage() {
                 </p>
               </div>
             </label>
+          </div>
+        </div>
+      </section>
+
+      {/* 表示設定 */}
+      <section className="space-y-4">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          表示設定
+        </h2>
+        <div className="rounded-2xl border border-slate-700 bg-slate-800/80 p-6 space-y-4">
+          <div className="space-y-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.showStatistics}
+                onChange={(e) => {
+                  updateSettings({ showStatistics: e.target.checked });
+                }}
+                className="w-4 h-4 rounded border-slate-600 bg-slate-900/50 text-emerald-500 focus:ring-2 focus:ring-emerald-500/50 focus:ring-offset-0 focus:ring-offset-slate-800"
+              />
+              <span className="text-sm font-medium text-slate-200">
+                統計・分析パネルを表示
+              </span>
+            </label>
+            <p className="text-xs text-slate-400">
+              ドリルエディタの右サイドバーに統計・分析パネルを表示します。
+              移動距離、移動速度、フォーメーションの複雑度、衝突リスクなどの情報を確認できます。
+            </p>
           </div>
         </div>
       </section>

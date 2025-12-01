@@ -2,7 +2,7 @@
 "use client";
 
 import { useRef, useState, forwardRef, useImperativeHandle, useMemo } from "react";
-import { Stage, Layer, Line, Circle, Text, Rect, Group } from "react-konva";
+import { Stage, Layer, Line, Circle, Text, Rect, Group, Shape } from "react-konva";
 import Konva from "konva";
 
 import type { WorldPos, Member, ArcBinding } from "../../lib/drill/types";
@@ -95,6 +95,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
   const fieldHeight = settings.fieldHeight;
   const showGrid = settings.showGrid;
   const gridInterval = settings.gridInterval;
+  const boldLines = settings.boldLines || [];
   const backgroundColor = settings.backgroundColor;
   const backgroundTransparent = settings.backgroundTransparent;
 
@@ -1067,6 +1068,77 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             }
             return lines;
           })()}
+
+        {/* カスタム太線 */}
+        {boldLines.map((line) => {
+          const centerX = CANVAS_WIDTH_PX / 2;
+          const centerY = CANVAS_HEIGHT_PX / 2;
+          
+          if (line.type === "horizontal") {
+            const y = centerY + line.position * stepPxY;
+            const startX = centerX - (line.length * stepPxX) / 2;
+            const endX = centerX + (line.length * stepPxX) / 2;
+            return (
+              <Line
+                key={line.id}
+                points={[startX, y, endX, y]}
+                stroke="#64748b"
+                strokeWidth={line.strokeWidth}
+                listening={false}
+              />
+            );
+          } else if (line.type === "vertical") {
+            const x = centerX + line.position * stepPxX;
+            const startY = centerY - (line.length * stepPxY) / 2;
+            const endY = centerY + (line.length * stepPxY) / 2;
+            return (
+              <Line
+                key={line.id}
+                points={[x, startY, x, endY]}
+                stroke="#64748b"
+                strokeWidth={line.strokeWidth}
+                listening={false}
+              />
+            );
+          } else if (line.type === "diagonal") {
+            const startX = centerX + line.start.x * stepPxX;
+            const startY = centerY + line.start.y * stepPxY;
+            const endX = centerX + line.end.x * stepPxX;
+            const endY = centerY + line.end.y * stepPxY;
+            return (
+              <Line
+                key={line.id}
+                points={[startX, startY, endX, endY]}
+                stroke="#64748b"
+                strokeWidth={line.strokeWidth}
+                listening={false}
+              />
+            );
+          } else if (line.type === "arc") {
+            const startX = centerX + line.start.x * stepPxX;
+            const startY = centerY + line.start.y * stepPxY;
+            const endX = centerX + line.end.x * stepPxX;
+            const endY = centerY + line.end.y * stepPxY;
+            const controlX = centerX + line.control.x * stepPxX;
+            const controlY = centerY + line.control.y * stepPxY;
+            // ベジェ曲線（二次）を描画
+            return (
+              <Shape
+                key={line.id}
+                sceneFunc={(context, shape) => {
+                  context.beginPath();
+                  context.moveTo(startX, startY);
+                  context.quadraticCurveTo(controlX, controlY, endX, endY);
+                  context.strokeStyle = "#64748b";
+                  context.lineWidth = line.strokeWidth;
+                  context.stroke();
+                }}
+                listening={false}
+              />
+            );
+          }
+          return null;
+        })}
       </Layer>
     </Stage>
       </div>

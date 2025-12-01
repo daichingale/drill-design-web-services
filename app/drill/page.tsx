@@ -36,6 +36,7 @@ import ExportOptionsDialog from "@/components/drill/ExportOptionsDialog";
 import MetadataDialog from "@/components/drill/MetadataDialog";
 import { useMusicSync } from "@/hooks/useMusicSync";
 import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
+import StatisticsPanel from "@/components/drill/StatisticsPanel";
 // import VideoConverterPanel from "@/components/drill/VideoConverterPanel"; // 一時的に非表示
 import CommandPalette, { type Command } from "@/components/drill/CommandPalette";
 import { useMenu } from "@/context/MenuContext";
@@ -2371,6 +2372,17 @@ export default function DrillPage() {
                 onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
               />
             </div>
+
+            {/* 統計・分析パネル（設定で表示/非表示を切り替え可能） */}
+            {settings.showStatistics && (
+              <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+                <StatisticsPanel
+                  sets={sets}
+                  members={members}
+                  playbackBPM={playbackBPM}
+                />
+              </div>
+            )}
 
             {/* WebM → MP4変換パネル（一時的に非表示：ffmpeg.wasmがNext.js 16/Turbopackと互換性の問題あり） */}
             {/* <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">

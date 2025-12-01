@@ -7,6 +7,31 @@ export type DisplayUnit = "meter" | "yard" | "step";
 
 export type MemberAddMode = "quick" | "careful";
 
+// 太線の型定義
+export type BoldLine = 
+  | {
+      id: string;
+      type: "horizontal" | "vertical"; // 横線 or 縦線
+      position: number; // 位置（ステップ単位、フィールド中心からの距離）
+      length: number; // 長さ（ステップ単位）
+      strokeWidth: number; // 太さ（ピクセル）
+    }
+  | {
+      id: string;
+      type: "diagonal"; // 斜め線
+      start: { x: number; y: number }; // 開始点（ステップ単位、フィールド中心からの距離）
+      end: { x: number; y: number }; // 終了点（ステップ単位、フィールド中心からの距離）
+      strokeWidth: number; // 太さ（ピクセル）
+    }
+  | {
+      id: string;
+      type: "arc"; // 弧（ベジェ曲線）
+      start: { x: number; y: number }; // 開始点（ステップ単位、フィールド中心からの距離）
+      end: { x: number; y: number }; // 終了点（ステップ単位、フィールド中心からの距離）
+      control: { x: number; y: number }; // 制御点（ステップ単位、フィールド中心からの距離）
+      strokeWidth: number; // 太さ（ピクセル）
+    };
+
 export type Settings = {
   // フィールドサイズ
   fieldWidth: number; // メートル
@@ -15,6 +40,9 @@ export type Settings = {
   // グリッド設定
   showGrid: boolean;
   gridInterval: number; // ステップ単位（例: 1 = 1ステップごと、8 = 8ステップごと）
+  
+  // 太線設定
+  boldLines: BoldLine[]; // カスタム太線
   
   // 表示単位
   displayUnit: DisplayUnit;
@@ -28,6 +56,9 @@ export type Settings = {
 
   // メンバー追加モード
   memberAddMode: MemberAddMode;
+
+  // 統計・分析パネルの表示
+  showStatistics: boolean;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -35,11 +66,13 @@ const DEFAULT_SETTINGS: Settings = {
   fieldHeight: 40,
   showGrid: true,
   gridInterval: 1, // 1ステップごと
+  boldLines: [], // デフォルトは太線なし
   displayUnit: "meter",
   backgroundColor: "#ffffff", // 白色
   backgroundTransparent: false,
   playbackBPM: 120, // デフォルトBPM
   memberAddMode: "quick",
+  showStatistics: false, // デフォルトは非表示
 };
 
 const STORAGE_KEY = "drill-settings";
