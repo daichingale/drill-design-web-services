@@ -11,6 +11,7 @@ type Props = {
   duration: number;
   markers: MusicSyncMarker[];
   bpm: number | null;
+  fileName?: string | null;
   onLoadMusic: (file: File) => Promise<boolean>;
   onPlayMusic: () => void;
   onStopMusic: () => void;
@@ -30,6 +31,7 @@ export default function MusicSyncPanel({
   duration,
   markers,
   bpm,
+  fileName,
   onLoadMusic,
   onPlayMusic,
   onStopMusic,
@@ -135,6 +137,25 @@ export default function MusicSyncPanel({
         >
           {isLoaded ? "音楽を変更" : "音楽を読み込む"}
         </button>
+        {isLoaded && fileName && (
+          <p className="text-[10px] text-slate-400 break-all">
+            読み込み中の音源:{" "}
+            <span className="text-slate-200">
+              {(() => {
+                const name = fileName;
+                const max = 24;
+                if (name.length <= max) return name;
+                const dotIndex = name.lastIndexOf(".");
+                const ext = dotIndex >= 0 ? name.slice(dotIndex) : "";
+                const base = dotIndex >= 0 ? name.slice(0, dotIndex) : name;
+                const keep = Math.max(4, max - ext.length - 3);
+                const head = base.slice(0, Math.ceil(keep / 2));
+                const tail = base.slice(-Math.floor(keep / 2));
+                return `${head}…${tail}${ext}`;
+              })()}
+            </span>
+          </p>
+        )}
       </div>
 
       {/* 再生コントロール */}

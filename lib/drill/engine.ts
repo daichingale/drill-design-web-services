@@ -56,16 +56,21 @@ export class DrillEngine {
   /** 毎フレーム呼ぶ。dt は秒単位。*/
   update(dt: number) {
     if (!this.playing) return;
+    
+    // 負の dt や 0 の場合は無視（時間の逆行や異常な値）
+    if (dt <= 0) return;
 
     this.currentCount += this.countsPerSecond * dt;
 
+    // 上限チェック（終了時のみ停止）
     if (this.currentCount > this.drill.maxCount) {
       this.currentCount = this.drill.maxCount;
       this.playing = false;
     }
+    
+    // 下限チェック（0未満になったら0にクランプするが、playingは維持）
     if (this.currentCount < 0) {
       this.currentCount = 0;
-      this.playing = false;
     }
   }
 

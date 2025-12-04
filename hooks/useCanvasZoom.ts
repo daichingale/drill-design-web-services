@@ -3,7 +3,7 @@
 
 import { useState, useCallback } from "react";
 
-const MIN_SCALE = 0.5;
+const MIN_SCALE = 0.3; // 最小スケールを0.3に変更（より小さくズームアウト可能）
 const MAX_SCALE = 2.5;
 
 /**
@@ -11,6 +11,9 @@ const MAX_SCALE = 2.5;
  */
 export function useCanvasZoom(initialScale: number = 1) {
   const [canvasScale, setCanvasScale] = useState(initialScale);
+  
+  // 初期スケールが設定されている場合、それをリセット値として保存
+  const [resetScale] = useState(initialScale);
 
   const handleZoomIn = useCallback(() => {
     setCanvasScale((prev) => Math.min(prev + 0.1, MAX_SCALE));
@@ -21,8 +24,8 @@ export function useCanvasZoom(initialScale: number = 1) {
   }, []);
 
   const handleZoomReset = useCallback(() => {
-    setCanvasScale(1);
-  }, []);
+    setCanvasScale(resetScale);
+  }, [resetScale]);
 
   const setZoom = useCallback((scale: number) => {
     setCanvasScale(Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale)));

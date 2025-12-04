@@ -1,7 +1,7 @@
 // hooks/useDrillRecording.ts
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { FieldCanvasRef } from "@/components/drill/FieldCanvas";
 import type { Drill3DPreviewRef } from "@/components/drill/Drill3DPreview";
 import type { UiSet } from "@/lib/drill/uiTypes";
@@ -20,7 +20,10 @@ type UseDrillRecordingParams = {
   musicState: MusicSyncState;
   setMusicSyncMode: (enabled: boolean) => void;
   setRecordingMode: (recording: boolean) => void;
-  handleStartPlay: () => void;
+  startPlayByCountRange: (startCount: number, endCount: number) => void;
+  playMusic: () => void;
+  getMusicTimeFromCount: (count: number) => number | null;
+  setCountFromMusic: (count: number) => void;
   stopPlay: () => void;
 };
 
@@ -36,7 +39,10 @@ export function useDrillRecording({
   musicState,
   setMusicSyncMode,
   setRecordingMode,
-  handleStartPlay,
+  startPlayByCountRange,
+  playMusic,
+  getMusicTimeFromCount,
+  setCountFromMusic,
   stopPlay,
 }: UseDrillRecordingParams) {
   const [isRecording2D, setIsRecording2D] = useState(false);
@@ -49,34 +55,73 @@ export function useDrillRecording({
     console.log("録画停止ボタンが押されました");
   }, []);
 
+  // ESC キーで録画停止できるようにする
+  useEffect(() => {
+    if (!isRecording2D && !isRecording3D) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        shouldStopRecordingRef.current = true;
+        console.log("録画停止: ESCキーが押されました");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isRecording2D, isRecording3D]);
+
   const handleRecord2D = useCallback(async () => {
     if (!canvasRef.current) {
       alert("キャンバスが読み込まれていません");
       return;
     }
 
-    const wasPlaying = isPlaying;
-    const wasMusicSyncMode = musicState.isLoaded && musicState.markers.length > 0;
-    
-    if (wasMusicSyncMode) {
-      setMusicSyncMode(false);
+    if (!sets.length) {
+      alert("セットが設定されていません");
+      return;
     }
-    
-    if (!wasPlaying) {
-      handleStartPlay();
-      let waitCount = 0;
-      const maxWait = 20;
-      while (!isPlaying && waitCount < maxWait) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        waitCount++;
+
+    const wasPlaying = isPlaying;
+    const wasMusicPlaying = musicState.isPlaying;
+    const hasMusicSync = musicState.isLoaded && musicState.markers.length > 0;
+
+    // 録画開始時は常に count 0 から動きを開始
+    // 最大カウントを計算（最後のセットの startCount + 余裕を持たせる）
+    const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const maxCount = Math.max(512, sortedSets[sortedSets.length - 1]?.startCount || 512);
+
+    // 音楽同期モードの設定
+    if (hasMusicSync) {
+      // 音楽同期モード: 動きは count 0 から開始し、音楽の時間からカウントを更新
+      const musicTime = getMusicTimeFromCount(0);
+      if (musicTime !== null) {
+        // 音楽が既に再生されていればそのまま、再生されていなければ開始
+        if (!wasMusicPlaying) {
+          playMusic();
+        }
+        setMusicSyncMode(true);
+        // 動きは count 0 から開始（音楽からカウントを更新する処理は useEffect で自動実行される）
+        startPlayByCountRange(0, maxCount);
+        // 音楽時間からカウント 0 を設定
+        setCountFromMusic(0);
+      } else {
+        // マーカー範囲外の場合は通常モード
+        setMusicSyncMode(false);
+        if (musicState.isLoaded && !wasMusicPlaying) {
+          playMusic();
+        }
+        startPlayByCountRange(0, maxCount);
       }
-      
-      if (!isPlaying && wasMusicSyncMode && musicState.isLoaded && musicState.isPlaying) {
-        console.log("2D録画: 音楽同期モード - 音楽が再生されているため録画を開始します");
-      } else if (!isPlaying) {
-        alert("再生が開始されていません。録画を開始できません。");
-        return;
+    } else {
+      // 通常モード: BPMベースでエンジンがカウントを進める
+      setMusicSyncMode(false);
+      if (musicState.isLoaded && !wasMusicPlaying) {
+        playMusic();
       }
+      startPlayByCountRange(0, maxCount);
     }
 
     setIsRecording2D(true);
@@ -84,25 +129,13 @@ export function useDrillRecording({
     shouldStopRecordingRef.current = false;
     setRecordingMode(true);
 
-    let recordingIsPlaying = isPlaying;
-
     try {
       const shouldStop = () => {
         if (shouldStopRecordingRef.current) {
-          console.log("2D録画停止: ユーザーが停止ボタンを押しました");
+          console.log("2D録画停止: ユーザーが停止ボタンまたはESCを押しました");
           return true;
         }
-        recordingIsPlaying = isPlaying;
-        if (!recordingIsPlaying) {
-          console.log("2D録画停止: 再生が停止されました");
-          return true;
-        }
-        if (wasMusicSyncMode && musicState.isLoaded && musicState.duration > 0) {
-          if (musicState.currentTime >= musicState.duration - 0.5) {
-            console.log("2D録画停止: 音楽が終了しました");
-            return true;
-          }
-        }
+        // 自動停止条件は設けず、明示的な停止操作のみで録画を終了する
         return false;
       };
 
@@ -114,7 +147,8 @@ export function useDrillRecording({
           width: 1920,
           height: 1080,
         },
-        (progress) => setRecordingProgress(progress)
+        (progress) => setRecordingProgress(progress),
+        musicState.audioStream ?? null
       );
 
       if (!wasPlaying) {
@@ -139,19 +173,20 @@ export function useDrillRecording({
       setRecordingProgress(0);
       shouldStopRecordingRef.current = false;
       setRecordingMode(false);
-      if (wasMusicSyncMode) {
-        setMusicSyncMode(true);
-      }
     }
   }, [
     canvasRef,
     currentSet,
     currentSetId,
+    sets,
     isPlaying,
     musicState,
     setMusicSyncMode,
     setRecordingMode,
-    handleStartPlay,
+    startPlayByCountRange,
+    playMusic,
+    getMusicTimeFromCount,
+    setCountFromMusic,
     stopPlay,
   ]);
 
@@ -161,45 +196,49 @@ export function useDrillRecording({
       return;
     }
 
-    const startSet = sets.find((s) => s.id === playStartId);
-    const endSet = sets.find((s) => s.id === playEndId);
-    if (!startSet || !endSet) {
-      alert("再生範囲が設定されていません");
+    if (!sets.length) {
+      alert("セットが設定されていません");
       return;
     }
 
-    const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
-    const startIndex = sortedSets.findIndex((s) => s.id === playStartId);
-    const endIndex = sortedSets.findIndex((s) => s.id === playEndId);
-    
-    const endCount = endIndex < sortedSets.length - 1
-      ? sortedSets[endIndex + 1].startCount
-      : endSet.startCount + 16;
-    
-    const duration = Math.max(1, (endCount - startSet.startCount) / 16);
-
     const wasPlaying = isPlaying;
-    const wasMusicSyncMode = musicState.isLoaded && musicState.markers.length > 0;
-    
-    if (wasMusicSyncMode) {
+    const wasMusicPlaying = musicState.isPlaying;
+    const hasMusicSync = musicState.isLoaded && musicState.markers.length > 0;
+
+    // 録画開始時は常に count 0 から動きを開始
+    // 最大カウントを計算（最後のセットの startCount + 余裕を持たせる）
+    const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const maxCount = Math.max(512, sortedSets[sortedSets.length - 1]?.startCount || 512);
+
+    // 音楽同期モードの設定
+    if (hasMusicSync) {
+      // 音楽同期モード: 動きは count 0 から開始し、音楽の時間からカウントを更新
+      const musicTime = getMusicTimeFromCount(0);
+      if (musicTime !== null) {
+        // 音楽が既に再生されていればそのまま、再生されていなければ開始
+        if (!wasMusicPlaying) {
+          playMusic();
+        }
+        setMusicSyncMode(true);
+        // 動きは count 0 から開始（音楽からカウントを更新する処理は useEffect で自動実行される）
+        startPlayByCountRange(0, maxCount);
+        // 音楽時間からカウント 0 を設定
+        setCountFromMusic(0);
+      } else {
+        // マーカー範囲外の場合は通常モード
+        setMusicSyncMode(false);
+        if (musicState.isLoaded && !wasMusicPlaying) {
+          playMusic();
+        }
+        startPlayByCountRange(0, maxCount);
+      }
+    } else {
+      // 通常モード: BPMベースでエンジンがカウントを進める
       setMusicSyncMode(false);
-    }
-    
-    if (!wasPlaying) {
-      handleStartPlay();
-      let waitCount = 0;
-      const maxWait = 20;
-      while (!isPlaying && waitCount < maxWait) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        waitCount++;
+      if (musicState.isLoaded && !wasMusicPlaying) {
+        playMusic();
       }
-      
-      if (!isPlaying && wasMusicSyncMode && musicState.isLoaded && musicState.isPlaying) {
-        console.log("3D録画: 音楽同期モード - 音楽が再生されているため録画を開始します");
-      } else if (!isPlaying) {
-        alert("再生が開始されていません。録画を開始できません。");
-        return;
-      }
+      startPlayByCountRange(0, maxCount);
     }
 
     setIsRecording3D(true);
@@ -208,6 +247,7 @@ export function useDrillRecording({
     setRecordingMode(true);
 
     let recordingIsPlaying = isPlaying;
+    const recordingHasMusicSync = hasMusicSync;
 
     try {
       const shouldStop = () => {
@@ -220,7 +260,7 @@ export function useDrillRecording({
           console.log("3D録画停止: 再生が停止されました");
           return true;
         }
-        if (wasMusicSyncMode && musicState.isLoaded && musicState.duration > 0) {
+        if (recordingHasMusicSync && musicState.isLoaded && musicState.duration > 0) {
           if (musicState.currentTime >= musicState.duration - 0.5) {
             console.log("3D録画停止: 音楽が終了しました");
             return true;
@@ -262,22 +302,23 @@ export function useDrillRecording({
       setRecordingProgress(0);
       shouldStopRecordingRef.current = false;
       setRecordingMode(false);
-      if (wasMusicSyncMode) {
+      if (recordingHasMusicSync) {
         setMusicSyncMode(true);
       }
     }
   }, [
     preview3DRef,
     sets,
-    playStartId,
-    playEndId,
     currentSet,
     currentSetId,
     isPlaying,
     musicState,
     setMusicSyncMode,
     setRecordingMode,
-    handleStartPlay,
+    startPlayByCountRange,
+    playMusic,
+    getMusicTimeFromCount,
+    setCountFromMusic,
     stopPlay,
   ]);
 
@@ -290,4 +331,5 @@ export function useDrillRecording({
     handleStopRecording,
   };
 }
+
 

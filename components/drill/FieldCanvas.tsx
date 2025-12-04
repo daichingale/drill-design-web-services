@@ -2,7 +2,7 @@
 "use client";
 
 import { useRef, useState, forwardRef, useImperativeHandle, useMemo } from "react";
-import { Stage, Layer, Line, Circle, Text, Rect, Group } from "react-konva";
+import { Stage, Layer, Line, Circle, Text, Rect, Group, Shape } from "react-konva";
 import Konva from "konva";
 
 import type { WorldPos, Member, ArcBinding } from "../../lib/drill/types";
@@ -27,6 +27,29 @@ type Props = {
   individualPlacementMode?: boolean; // 個別配置モード
   onPlaceMember?: (id: string, pos: WorldPos) => void; // 個別配置コールバック
   placementQueue?: string[]; // 配置待ちのメンバーIDリスト
+  // 横一列レイアウト編集用（未確定ラインの両端ハンドル）
+  lineEditState?: {
+    memberIds: string[];
+    start: WorldPos;
+    end: WorldPos;
+  } | null;
+  onUpdateLineEdit?: (start: WorldPos, end: WorldPos) => void;
+  // ボックスレイアウト編集用（四隅ハンドル）
+  boxEditState?: {
+    memberIds: string[];
+    cols: number;
+    rows: number;
+    tl: WorldPos;
+    tr: WorldPos;
+    br: WorldPos;
+    bl: WorldPos;
+  } | null;
+  onUpdateBoxEdit?: (corners: {
+    tl: WorldPos;
+    tr: WorldPos;
+    br: WorldPos;
+    bl: WorldPos;
+  }) => void;
 };
 
 // ===== キャンバス設定 =====
@@ -60,6 +83,10 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
     individualPlacementMode = false,
     onPlaceMember,
     placementQueue = [],
+    lineEditState = null,
+    onUpdateLineEdit,
+    boxEditState = null,
+    onUpdateBoxEdit,
   } = props;
   
   // 設定を取得
@@ -68,6 +95,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
   const fieldHeight = settings.fieldHeight;
   const showGrid = settings.showGrid;
   const gridInterval = settings.gridInterval;
+  const boldLines = settings.boldLines || [];
   const backgroundColor = settings.backgroundColor;
   const backgroundTransparent = settings.backgroundTransparent;
 
@@ -85,7 +113,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
     [fieldHeight, CANVAS_HEIGHT_PX]
   );
 
-  // 座標変換関数
+  // 座標変換関数（フィールドの左上が(0,0)の座標系）
   const worldToCanvas = useMemo(
     () => (pos: WorldPos) => ({
       x: pos.x * baseScaleX,
@@ -182,7 +210,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
   const scaledHeight = CANVAS_HEIGHT_PX * scale;
 
   return (
-    <div className="w-full h-full flex items-center justify-center overflow-hidden">
+    <div className="w-full h-full flex items-center justify-center" style={{ minHeight: `${CANVAS_HEIGHT_PX * scale}px`, minWidth: `${CANVAS_WIDTH_PX * scale}px` }}>
       <div
         style={{
           transform: `scale(${scale})`,
@@ -197,6 +225,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
           height={CANVAS_HEIGHT_PX}
           scaleX={1}
           scaleY={1}
+          style={{ backgroundColor: "#ffffff" }}
       // ===== 個別配置モード用クリックハンドラ =====
       onClick={(e: any) => {
         // 個別配置モードの場合、フィールドをクリックしたらメンバーを配置
@@ -303,62 +332,19 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
       }}
     >
       <Layer>
-        {/* フィールド背景 */}
+        {/* フィールド背景 - 一番後ろに配置 */}
         {!backgroundTransparent && (
           <Rect
             x={0}
             y={0}
             width={CANVAS_WIDTH_PX}
             height={CANVAS_HEIGHT_PX}
-            fill={backgroundColor}
+            fill="#ffffff"
+            listening={false}
           />
         )}
 
-        {/* グリッド（縦線） */}
-        {showGrid &&
-          Array.from({ length: Math.floor(totalStepsX / gridInterval) + 1 }).map((_, i) => {
-            const stepIndex = i * gridInterval;
-            const x = stepIndex * stepPxX;
-            const isBold = stepIndex % 8 === 0;
-            // 中央の線（x軸）は後で別途描画するのでスキップ
-            const centerStep = totalStepsX / 2;
-            const isCenterLine = Math.abs(stepIndex - centerStep) < 0.1; // 中央の線はスキップ
-
-            if (isCenterLine) return null;
-
-            return (
-              <Line
-                key={`v-${i}`}
-                points={[x, 0, x, CANVAS_HEIGHT_PX]}
-                stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
-                strokeWidth={isBold ? 2 : 0.5}
-              />
-            );
-          })}
-
-        {/* グリッド（横線） */}
-        {showGrid &&
-          Array.from({ length: Math.floor(totalStepsY / gridInterval) + 1 }).map((_, i) => {
-            const stepIndex = i * gridInterval;
-            const y = stepIndex * stepPxY;
-            const isBold = stepIndex % 8 === 0;
-            // 中央の線（y軸）は後で別途描画するのでスキップ
-            const centerStep = totalStepsY / 2;
-            const isCenterLine = Math.abs(stepIndex - centerStep) < 0.1; // 中央の線はスキップ
-
-            if (isCenterLine) return null;
-
-            return (
-              <Line
-                key={`h-${i}`}
-                points={[0, y, CANVAS_WIDTH_PX, y]}
-                stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
-                strokeWidth={isBold ? 2 : 0.5}
-              />
-            );
-          })}
-        
-        {/* 30m×30mの正方形の枠（黒い太線） */}
+        {/* 30m×30mの正方形の枠（黒い太線） - 背景の上 */}
         {/* 真ん中から上下左右に3ポイント（24ステップ）= 30m */}
         {(() => {
           const centerX = CANVAS_WIDTH_PX / 2;
@@ -378,23 +364,26 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
               stroke="#000000"
               strokeWidth={3}
               closed={true}
+              listening={false}
             />
           );
         })()}
         
-        {/* 中央の十字（濃く表示） */}
+        {/* 中央の十字（濃く表示） - 背景の上 */}
         <Line
           points={[CANVAS_WIDTH_PX / 2, 0, CANVAS_WIDTH_PX / 2, CANVAS_HEIGHT_PX]}
           stroke="#1e293b"
           strokeWidth={4}
+          listening={false}
         />
         <Line
           points={[0, CANVAS_HEIGHT_PX / 2, CANVAS_WIDTH_PX, CANVAS_HEIGHT_PX / 2]}
           stroke="#1e293b"
           strokeWidth={4}
+          listening={false}
         />
 
-        {/* 外枠 */}
+        {/* 外枠 - 背景の上 */}
         <Line
           points={[
             0,
@@ -408,11 +397,14 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             0,
             0,
           ]}
-          stroke="#475569"
+          stroke="#1e293b"
           strokeWidth={2}
+          closed={true}
+          listening={false}
         />
 
-        {/* ベジェアークのコントロール表示（既存のまま） */}
+
+        {/* ベジェアークのコントロール表示 */}
         {activeArc &&
           !isPlaying &&
           (() => {
@@ -491,11 +483,12 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
           const playerId = `P${index + 1}`;
 
           return (
-            <Group
+              <Group
               key={m.id}
               x={canvasPos.x}
               y={canvasPos.y}
-              draggable={!isPlaying && !activeArc}
+              // ライン編集中（lineEditStateが有効）のときはメンバーをドラッグ不可にする
+              draggable={!isPlaying && !activeArc && !lineEditState && !boxEditState}
               onClick={(e: any) => {
                 e.cancelBubble = true; // イベントの伝播を防ぐ
                 const multi =
@@ -676,6 +669,127 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             </Group>
           );
         })}
+
+        {/* 横一列レイアウト編集用ハンドル（pendingPositions による未確定ラインを想定） */}
+        {lineEditState && !isPlaying && !activeArc && onUpdateLineEdit && (() => {
+          const { start, end } = lineEditState;
+          const cStart = worldToCanvas(start);
+          const cEnd = worldToCanvas(end);
+          return (
+            <>
+              {/* ライン本体 */}
+              <Line
+                points={[cStart.x, cStart.y, cEnd.x, cEnd.y]}
+                stroke="#38bdf8"
+                strokeWidth={2}
+                dash={[6, 4]}
+                onMouseDown={(e: any) => {
+                  // メンバー選択など下層へのイベント伝播を防ぐ
+                  e.cancelBubble = true;
+                }}
+              />
+              {/* 開始ハンドル */}
+              <Circle
+                x={cStart.x}
+                y={cStart.y}
+                radius={7}
+                fill="#0ea5e9"
+                stroke="#0369a1"
+                strokeWidth={2}
+                draggable
+                onMouseDown={(e: any) => {
+                  e.cancelBubble = true;
+                }}
+                onDragMove={(e: any) => {
+                  const { x, y } = e.target.position();
+                  const world = canvasToWorld(x, y);
+                  onUpdateLineEdit(world, end);
+                }}
+              />
+              {/* 終端ハンドル */}
+              <Circle
+                x={cEnd.x}
+                y={cEnd.y}
+                radius={7}
+                fill="#0ea5e9"
+                stroke="#0369a1"
+                strokeWidth={2}
+                draggable
+                onMouseDown={(e: any) => {
+                  e.cancelBubble = true;
+                }}
+                onDragMove={(e: any) => {
+                  const { x, y } = e.target.position();
+                  const world = canvasToWorld(x, y);
+                  onUpdateLineEdit(start, world);
+                }}
+              />
+            </>
+          );
+        })()}
+
+        {/* ボックスレイアウト編集用ハンドル（四隅のドラッグで平行四辺形に変形） */}
+        {boxEditState && !isPlaying && !activeArc && onUpdateBoxEdit && (() => {
+          const { tl, tr, br, bl } = boxEditState;
+          const cTL = worldToCanvas(tl);
+          const cTR = worldToCanvas(tr);
+          const cBR = worldToCanvas(br);
+          const cBL = worldToCanvas(bl);
+
+          return (
+            <>
+              {/* ボックスの輪郭 */}
+              <Line
+                points={[
+                  cTL.x, cTL.y,
+                  cTR.x, cTR.y,
+                  cBR.x, cBR.y,
+                  cBL.x, cBL.y,
+                  cTL.x, cTL.y,
+                ]}
+                stroke="#22c55e"
+                strokeWidth={2}
+                dash={[6, 4]}
+                closed
+                onMouseDown={(e: any) => {
+                  e.cancelBubble = true;
+                }}
+              />
+
+              {/* 各コーナーハンドル */}
+              {[
+                { key: "tl", cx: cTL.x, cy: cTL.y },
+                { key: "tr", cx: cTR.x, cy: cTR.y },
+                { key: "br", cx: cBR.x, cy: cBR.y },
+                { key: "bl", cx: cBL.x, cy: cBL.y },
+              ].map(({ key, cx, cy }) => (
+                <Circle
+                  key={`box-corner-${key}`}
+                  x={cx}
+                  y={cy}
+                  radius={7}
+                  fill="#22c55e"
+                  stroke="#166534"
+                  strokeWidth={2}
+                  draggable
+                  onMouseDown={(e: any) => {
+                    e.cancelBubble = true;
+                  }}
+                  onDragMove={(e: any) => {
+                    const { x, y } = e.target.position();
+                    const w = canvasToWorld(x, y);
+                    const next = { tl, tr, br, bl };
+                    if (key === "tl") next.tl = w;
+                    if (key === "tr") next.tr = w;
+                    if (key === "br") next.br = w;
+                    if (key === "bl") next.bl = w;
+                    onUpdateBoxEdit(next);
+                  }}
+                />
+              ))}
+            </>
+          );
+        })()}
 
         {/* ★ 矩形選択の表示 */}
         {selectionRect && (() => {
@@ -898,6 +1012,133 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
             </Group>
           );
         })()}
+
+        {/* グリッド（縦線） - グリッドは一番前に配置 */}
+        {showGrid &&
+          (() => {
+            const lines = [];
+            // フィールド全体をカバーするように、0からCANVAS_WIDTH_PXまでグリッド線を描画
+            const maxX = CANVAS_WIDTH_PX;
+            for (let x = 0; x <= maxX; x += stepPxX * gridInterval) {
+              const stepIndex = Math.round(x / stepPxX);
+              const isBold = stepIndex % 8 === 0;
+              // 中央の線（x軸）は後で別途描画するのでスキップ
+              const centerX = CANVAS_WIDTH_PX / 2;
+              const isCenterLine = Math.abs(x - centerX) < stepPxX / 2; // 中央の線はスキップ
+
+              if (isCenterLine) continue;
+
+              lines.push(
+                <Line
+                  key={`v-${stepIndex}`}
+                  points={[x, 0, x, CANVAS_HEIGHT_PX]}
+                  stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
+                  strokeWidth={isBold ? 2 : 0.5}
+                  listening={false}
+                />
+              );
+            }
+            return lines;
+          })()}
+
+        {/* グリッド（横線） - グリッドは一番前に配置 */}
+        {showGrid &&
+          (() => {
+            const lines = [];
+            // フィールド全体をカバーするように、0からCANVAS_HEIGHT_PXまでグリッド線を描画
+            const maxY = CANVAS_HEIGHT_PX;
+            for (let y = 0; y <= maxY; y += stepPxY * gridInterval) {
+              const stepIndex = Math.round(y / stepPxY);
+              const isBold = stepIndex % 8 === 0;
+              // 中央の線（y軸）は後で別途描画するのでスキップ
+              const centerY = CANVAS_HEIGHT_PX / 2;
+              const isCenterLine = Math.abs(y - centerY) < stepPxY / 2; // 中央の線はスキップ
+
+              if (isCenterLine) continue;
+
+              lines.push(
+                <Line
+                  key={`h-${stepIndex}`}
+                  points={[0, y, CANVAS_WIDTH_PX, y]}
+                  stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
+                  strokeWidth={isBold ? 2 : 0.5}
+                  listening={false}
+                />
+              );
+            }
+            return lines;
+          })()}
+
+        {/* カスタム太線 */}
+        {boldLines.map((line) => {
+          const centerX = CANVAS_WIDTH_PX / 2;
+          const centerY = CANVAS_HEIGHT_PX / 2;
+          
+          if (line.type === "horizontal") {
+            const y = centerY + line.position * stepPxY;
+            const startX = centerX - (line.length * stepPxX) / 2;
+            const endX = centerX + (line.length * stepPxX) / 2;
+            return (
+              <Line
+                key={line.id}
+                points={[startX, y, endX, y]}
+                stroke="#64748b"
+                strokeWidth={line.strokeWidth}
+                listening={false}
+              />
+            );
+          } else if (line.type === "vertical") {
+            const x = centerX + line.position * stepPxX;
+            const startY = centerY - (line.length * stepPxY) / 2;
+            const endY = centerY + (line.length * stepPxY) / 2;
+            return (
+              <Line
+                key={line.id}
+                points={[x, startY, x, endY]}
+                stroke="#64748b"
+                strokeWidth={line.strokeWidth}
+                listening={false}
+              />
+            );
+          } else if (line.type === "diagonal") {
+            const startX = centerX + line.start.x * stepPxX;
+            const startY = centerY + line.start.y * stepPxY;
+            const endX = centerX + line.end.x * stepPxX;
+            const endY = centerY + line.end.y * stepPxY;
+            return (
+              <Line
+                key={line.id}
+                points={[startX, startY, endX, endY]}
+                stroke="#64748b"
+                strokeWidth={line.strokeWidth}
+                listening={false}
+              />
+            );
+          } else if (line.type === "arc") {
+            const startX = centerX + line.start.x * stepPxX;
+            const startY = centerY + line.start.y * stepPxY;
+            const endX = centerX + line.end.x * stepPxX;
+            const endY = centerY + line.end.y * stepPxY;
+            const controlX = centerX + line.control.x * stepPxX;
+            const controlY = centerY + line.control.y * stepPxY;
+            // ベジェ曲線（二次）を描画
+            return (
+              <Shape
+                key={line.id}
+                sceneFunc={(context, shape) => {
+                  context.beginPath();
+                  context.moveTo(startX, startY);
+                  context.quadraticCurveTo(controlX, controlY, endX, endY);
+                  context.strokeStyle = "#64748b";
+                  context.lineWidth = line.strokeWidth;
+                  context.stroke();
+                }}
+                listening={false}
+              />
+            );
+          }
+          return null;
+        })}
       </Layer>
     </Stage>
       </div>

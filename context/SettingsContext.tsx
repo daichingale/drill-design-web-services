@@ -5,6 +5,33 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 
 export type DisplayUnit = "meter" | "yard" | "step";
 
+export type MemberAddMode = "quick" | "careful";
+
+// 太線の型定義
+export type BoldLine = 
+  | {
+      id: string;
+      type: "horizontal" | "vertical"; // 横線 or 縦線
+      position: number; // 位置（ステップ単位、フィールド中心からの距離）
+      length: number; // 長さ（ステップ単位）
+      strokeWidth: number; // 太さ（ピクセル）
+    }
+  | {
+      id: string;
+      type: "diagonal"; // 斜め線
+      start: { x: number; y: number }; // 開始点（ステップ単位、フィールド中心からの距離）
+      end: { x: number; y: number }; // 終了点（ステップ単位、フィールド中心からの距離）
+      strokeWidth: number; // 太さ（ピクセル）
+    }
+  | {
+      id: string;
+      type: "arc"; // 弧（ベジェ曲線）
+      start: { x: number; y: number }; // 開始点（ステップ単位、フィールド中心からの距離）
+      end: { x: number; y: number }; // 終了点（ステップ単位、フィールド中心からの距離）
+      control: { x: number; y: number }; // 制御点（ステップ単位、フィールド中心からの距離）
+      strokeWidth: number; // 太さ（ピクセル）
+    };
+
 export type Settings = {
   // フィールドサイズ
   fieldWidth: number; // メートル
@@ -14,12 +41,24 @@ export type Settings = {
   showGrid: boolean;
   gridInterval: number; // ステップ単位（例: 1 = 1ステップごと、8 = 8ステップごと）
   
+  // 太線設定
+  boldLines: BoldLine[]; // カスタム太線
+  
   // 表示単位
   displayUnit: DisplayUnit;
   
   // 背景色
   backgroundColor: string;
   backgroundTransparent: boolean; // 背景を透過にするか
+  
+  // 再生設定
+  playbackBPM: number; // 再生速度（BPM）
+
+  // メンバー追加モード
+  memberAddMode: MemberAddMode;
+
+  // 統計・分析パネルの表示
+  showStatistics: boolean;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -27,19 +66,24 @@ const DEFAULT_SETTINGS: Settings = {
   fieldHeight: 40,
   showGrid: true,
   gridInterval: 1, // 1ステップごと
+  boldLines: [], // デフォルトは太線なし
   displayUnit: "meter",
-  backgroundColor: "#f5f7fa", // 薄いグレー（モノクロコピーでも見えやすく、メンバー視認性も良い）
+  backgroundColor: "#ffffff", // 白色
   backgroundTransparent: false,
+  playbackBPM: 120, // デフォルトBPM
+  memberAddMode: "quick",
+  showStatistics: false, // デフォルトは非表示
 };
 
 const STORAGE_KEY = "drill-settings";
 
-// ローカルストレージから設定を読み込む
+// ローカルストレージから設定を読み込む（クライアント専用）
 const loadSettingsFromStorage = (): Settings => {
   if (typeof window === "undefined") {
+    // サーバー側レンダリング時は必ずデフォルト値を返す
     return DEFAULT_SETTINGS;
   }
-  
+
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
@@ -78,7 +122,14 @@ type SettingsContextType = {
 const SettingsContext = createContext<SettingsContextType | null>(null);
 
 export const SettingsProvider = ({ children }: { children: React.ReactNode }) => {
-  const [settings, setSettings] = useState<Settings>(() => loadSettingsFromStorage());
+  // サーバー・クライアント初期レンダリングでは必ず同じ値（DEFAULT_SETTINGS）になるようにする
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+
+  // マウント後にローカルストレージから設定を読み込んで反映（クライアント側のみ）
+  useEffect(() => {
+    const storedSettings = loadSettingsFromStorage();
+    setSettings(storedSettings);
+  }, []);
 
   // 設定を更新
   const updateSettings = useCallback((updates: Partial<Settings>) => {

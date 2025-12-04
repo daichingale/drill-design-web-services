@@ -7,8 +7,12 @@ import { MembersProvider } from "@/context/MembersContext";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { MenuProvider } from "@/context/MenuContext";
 import { I18nProvider } from "@/context/I18nContext";
+import { ClipboardProvider } from "@/context/ClipboardContext";
+import { ShortcutProvider } from "@/context/ShortcutContext";
 import MenuBar from "@/components/MenuBar";
-import LanguageToggle from "@/components/LanguageToggle";
+import HeaderControls from "@/components/HeaderControls";
+import ErrorNotification from "@/components/ErrorNotification";
+import SessionProvider from "@/components/providers/SessionProvider";
 
 export const metadata: Metadata = {
   title: "Drill Design Web Services",
@@ -20,10 +24,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="ja">
       <body className="min-h-screen bg-slate-900 text-slate-100">
         {/* 全体で共有するコンテキスト */}
-        <I18nProvider>
-          <SettingsProvider>
-            <MembersProvider>
-              <MenuProvider>
+        <SessionProvider>
+          <I18nProvider>
+            <SettingsProvider>
+              <ShortcutProvider>
+                <ClipboardProvider>
+                  <MembersProvider>
+                    <MenuProvider>
                   {/* メニューバー（固定、最上部） */}
                   <div className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur rounded-b-lg">
                 <div className="mx-auto max-w-full">
@@ -43,19 +50,22 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                       </Link>
                       <MenuBar />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <LanguageToggle />
-                    </div>
+                    <HeaderControls />
                   </div>
                 </div>
               </div>
 
                 {/* 各ページ本体 */}
                 <main className="mx-auto max-w-[98vw] px-2 py-4">{children}</main>
-              </MenuProvider>
-            </MembersProvider>
-          </SettingsProvider>
-        </I18nProvider>
+                {/* エラー通知 */}
+                <ErrorNotification />
+                    </MenuProvider>
+                  </MembersProvider>
+                </ClipboardProvider>
+              </ShortcutProvider>
+            </SettingsProvider>
+          </I18nProvider>
+        </SessionProvider>
       </body>
     </html>
   );

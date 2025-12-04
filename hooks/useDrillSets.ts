@@ -5,6 +5,7 @@ import { useEffect,useCallback,useState } from "react";
 import type { WorldPos, Member, ArcBinding } from "@/lib/drill/types";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import { useSettings } from "@/context/SettingsContext";
+import { STEP_M } from "@/lib/drill/utils";
 import {
   arrangeCircle as arrangeCircleUtil,
   arrangeRectangle as arrangeRectangleUtil,
@@ -95,23 +96,13 @@ export function useDrillSets(
     x: Math.min(Math.max(p.x, 0), fieldWidth),
     y: Math.min(Math.max(p.y, 0), fieldHeight),
   }), [fieldWidth, fieldHeight]);
-  const initialSet1Id = `set-init-1-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const initialSet2Id = `set-init-2-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const initialSetId = `set-init-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   const [sets, setSets] = useState<UiSet[]>([
     {
-      id: initialSet1Id,
-      name: "Set 1",
+      id: initialSetId,
+      name: "",
       startCount: 0,
-      positions: {},
-      note: "",
-      instructions: "",
-      nextMove: "",
-    },
-    {
-      id: initialSet2Id,
-      name: "Set 2",
-      startCount: 16,
       positions: {},
       note: "",
       instructions: "",
@@ -119,7 +110,7 @@ export function useDrillSets(
     },
   ]);
 
-  const [currentSetId, setCurrentSetId] = useState(initialSet1Id);
+  const [currentSetId, setCurrentSetId] = useState(initialSetId);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [arcBinding, setArcBinding] = useState<ArcBinding | null>(null);
 
@@ -171,28 +162,84 @@ export function useDrillSets(
 
   const currentSet = sets.find((s) => s.id === currentSetId) ?? sets[0];
 
-  // メンバー追加・削除に応じて円形初期配置
+  // メンバー追加・削除に応じて初期配置
+  // memberAddMode が "quick" のときだけ自動配置を行い、"careful" のときは自動で位置を付けない
   useEffect(() => {
     setSets((prevSets) =>
       prevSets.map((set) => {
         const newPositions: Record<string, WorldPos> = { ...set.positions };
-        const count = members.length;
-
         const centerX = fieldWidth / 2;
         const centerY = fieldHeight / 2;
-        const radius = 5;
+        const spacing = 2 * STEP_M; // 前後・左右とも「2歩間」
 
-        members.forEach((m, i) => {
-          if (!newPositions[m.id]) {
-            const angle = (i / Math.max(count, 1)) * Math.PI * 2;
-            const raw = {
-              x: centerX + Math.cos(angle) * radius,
-              y: centerY + Math.sin(angle) * radius,
+        // まだ位置が決まっていないメンバーだけ対象にする
+        const missingMembers = members.filter((m) => !newPositions[m.id]);
+
+        // じっくりモードでは自動配置を行わない
+        if (settings.memberAddMode === "careful") {
+          // 削除されたメンバーだけ位置情報を消して終了
+          Object.keys(newPositions).forEach((id) => {
+            if (!members.find((m) => m.id === id)) {
+              delete newPositions[id];
+            }
+          });
+          return { ...set, positions: newPositions };
+        }
+
+        if (missingMembers.length > 0) {
+          const totalMembers = members.length;
+
+          // 基準となる列数（2列ブロックの横方向の人数）
+          const cols = Math.max(1, Math.ceil(totalMembers / 2));
+
+          // フィールド中央に揃うようにX座標を計算
+          const totalWidth = (cols - 1) * spacing;
+          const startX = centerX - totalWidth / 2;
+
+          // 2列（前後）のY位置：centerYを基準に前後2歩間
+          const frontY = centerY - spacing / 2;
+          const backY = centerY + spacing / 2;
+
+          missingMembers.forEach((member) => {
+            const index = members.findIndex((m) => m.id === member.id);
+            if (index === -1) return;
+
+            // 上段（front）→下段（back）の順に詰めていく
+            const row = index < cols ? 0 : 1;
+            const col = row === 0 ? index : index - cols;
+
+            let candidate: WorldPos = {
+              x: startX + col * spacing,
+              y: row === 0 ? frontY : backY,
             };
-            // ★ ホール／ハーフ／自由スナップをここで反映
-            newPositions[m.id] = clampAndSnap(raw);
-          }
-        });
+
+            // すでに誰かがほぼ同じ位置にいる場合は、左右にずらして空いている場所を探す
+            const maxTries = cols * 4; // 安全のための上限
+            let tries = 0;
+            const isOccupied = (pos: WorldPos) => {
+              return Object.values(newPositions).some((p) => {
+                const dx = p.x - pos.x;
+                const dy = p.y - pos.y;
+                // ほぼ同じ座標（1ステップ未満の距離）なら重なりとみなす
+                return dx * dx + dy * dy < (STEP_M * STEP_M) / 4;
+              });
+            };
+
+            while (isOccupied(candidate) && tries < maxTries) {
+              tries += 1;
+              candidate = {
+                x: candidate.x + spacing,
+                y: candidate.y,
+              };
+              // フィールド右端を超えたら左端に戻す
+              if (candidate.x > fieldWidth) {
+                candidate.x = Math.max(0, candidate.x - fieldWidth);
+              }
+            }
+
+            newPositions[member.id] = clampAndSnap(candidate);
+          });
+        }
 
         // 削除されたメンバー → 位置削除
         Object.keys(newPositions).forEach((id) => {

@@ -58,7 +58,7 @@ export default function MetadataDialog({
               value={localTitle}
               onChange={(e) => setLocalTitle(e.target.value)}
               className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
-              placeholder="例: 2024年度定期演奏会"
+              placeholder="ドリルのタイトルを入力"
             />
           </div>
           
@@ -71,7 +71,7 @@ export default function MetadataDialog({
               value={localDataName}
               onChange={(e) => setLocalDataName(e.target.value)}
               className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner"
-              placeholder="例: 2024-regular-concert"
+              placeholder="保存用のデータ名を入力"
             />
           </div>
         </div>

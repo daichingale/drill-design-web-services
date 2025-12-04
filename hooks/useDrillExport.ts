@@ -17,6 +17,9 @@ import {
 import { downloadImage, exportSetsToPDF, printCurrentSet, printSelectedSets } from "@/lib/drill/export";
 import { exportSetWithInfo } from "@/lib/drill/imageExport";
 import type { WorldPos } from "@/lib/drill/types";
+import { useSettings } from "@/context/SettingsContext";
+import { validateImportData, validateDrillData } from "@/lib/drill/validation";
+import { showValidationErrors, addGlobalNotification } from "@/components/ErrorNotification";
 
 type UseDrillExportParams = {
   sets: UiSet[];
@@ -41,6 +44,7 @@ export function useDrillExport({
   setCurrentSetId,
   getSetPositions,
 }: UseDrillExportParams) {
+  const { settings, updateSettings } = useSettings();
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [pendingExportType, setPendingExportType] = useState<"image" | "pdf" | "print" | null>(null);
   const [pendingImageFormat, setPendingImageFormat] = useState<"png" | "jpeg">("png");
@@ -72,7 +76,7 @@ export function useDrillExport({
   }, [restoreState, isRestoringRef]);
 
   const handleExportJSON = useCallback(() => {
-    const json = exportDrillToJSON(sets);
+    const json = exportDrillToJSON(sets, settings);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -82,7 +86,7 @@ export function useDrillExport({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [sets]);
+  }, [sets, settings]);
 
   const handleImportJSON = useCallback(() => {
     const input = document.createElement("input");
@@ -94,30 +98,87 @@ export function useDrillExport({
 
       const reader = new FileReader();
       reader.onload = (event) => {
-        const jsonString = event.target?.result as string;
-        const importedSets = importDrillFromJSON(jsonString);
-        
-        if (importedSets && importedSets.length > 0) {
+        try {
+          const jsonString = event.target?.result as string;
+          
+          // まずJSONをパース
+          let parsedData: any;
+          try {
+            parsedData = JSON.parse(jsonString);
+          } catch (parseError) {
+            addGlobalNotification({
+              type: "error",
+              message: "JSONファイルの解析に失敗しました",
+              details: parseError instanceof Error ? parseError.message : String(parseError),
+            });
+            return;
+          }
+
+          // バリデーション
+          const validation = validateImportData(parsedData);
+          if (!validation.valid || !validation.data) {
+            addGlobalNotification({
+              type: "error",
+              message: validation.error || "データの検証に失敗しました",
+            });
+            return;
+          }
+
+          // 追加のバリデーション（メンバー情報も含めて）
+          const fullValidation = validateDrillData(
+            validation.data.sets,
+            members,
+            validation.data.settings || settings
+          );
+
+          // 警告がある場合は表示
+          if (fullValidation.warnings.length > 0) {
+            showValidationErrors([], fullValidation.warnings);
+          }
+
+          // エラーがある場合はインポートを中止
+          if (!fullValidation.valid) {
+            showValidationErrors(fullValidation.errors, []);
+            addGlobalNotification({
+              type: "error",
+              message: "データにエラーがあります。インポートを中止しました。",
+            });
+            return;
+          }
+
+          // インポート実行
           if (confirm("現在のデータを上書きしますか？")) {
             isRestoringRef.current = true;
-            restoreState(importedSets, [], importedSets[0]?.id || "");
+            // 設定を復元
+            if (validation.data.settings) {
+              updateSettings(validation.data.settings);
+            }
+            restoreState(validation.data.sets, [], validation.data.sets[0]?.id || "");
             setTimeout(() => {
               isRestoringRef.current = false;
             }, 0);
-            alert("ドリルデータをインポートしました");
+            
+            addGlobalNotification({
+              type: "success",
+              message: "ドリルデータをインポートしました",
+            });
           }
-        } else {
-          alert("インポートに失敗しました。ファイル形式を確認してください。");
+        } catch (error) {
+          addGlobalNotification({
+            type: "error",
+            message: "インポートに失敗しました",
+            details: error instanceof Error ? error.message : String(error),
+          });
         }
       };
       reader.readAsText(file);
     };
     input.click();
-  }, [restoreState, isRestoringRef]);
+  }, [restoreState, isRestoringRef, updateSettings, members, settings]);
 
   // YAMLエクスポート
   const handleExportYAML = useCallback(() => {
-    const yamlString = exportDrillToYAML(sets);
+    const yamlString = exportDrillToYAML(sets, settings);
     const blob = new Blob([yamlString], { type: "text/yaml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -127,7 +188,7 @@ export function useDrillExport({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [sets]);
+  }, [sets, settings]);
 
   // YAMLインポート
   const handleImportYAML = useCallback(() => {
@@ -140,26 +201,84 @@ export function useDrillExport({
 
       const reader = new FileReader();
       reader.onload = (event) => {
-        const yamlString = event.target?.result as string;
-        const importedSets = importDrillFromYAML(yamlString);
-        
-        if (importedSets && importedSets.length > 0) {
+        try {
+          const yamlString = event.target?.result as string;
+          const result = importDrillFromYAML(yamlString);
+          
+          if (!result || !result.sets || result.sets.length === 0) {
+            addGlobalNotification({
+              type: "error",
+              message: "インポートに失敗しました。ファイル形式を確認してください。",
+            });
+            return;
+          }
+
+          // バリデーション
+          const validation = validateImportData({
+            sets: result.sets,
+            members: members,
+            settings: result.settings,
+          });
+
+          if (!validation.valid || !validation.data) {
+            addGlobalNotification({
+              type: "error",
+              message: validation.error || "データの検証に失敗しました",
+            });
+            return;
+          }
+
+          // 追加のバリデーション
+          const fullValidation = validateDrillData(
+            validation.data.sets,
+            members,
+            validation.data.settings || settings
+          );
+
+          // 警告がある場合は表示
+          if (fullValidation.warnings.length > 0) {
+            showValidationErrors([], fullValidation.warnings);
+          }
+
+          // エラーがある場合はインポートを中止
+          if (!fullValidation.valid) {
+            showValidationErrors(fullValidation.errors, []);
+            addGlobalNotification({
+              type: "error",
+              message: "データにエラーがあります。インポートを中止しました。",
+            });
+            return;
+          }
+
+          // インポート実行
           if (confirm("現在のデータを上書きしますか？")) {
             isRestoringRef.current = true;
-            restoreState(importedSets, [], importedSets[0]?.id || "");
+            // 設定を復元
+            if (result.settings) {
+              updateSettings(result.settings);
+            }
+            restoreState(result.sets, [], result.sets[0]?.id || "");
             setTimeout(() => {
               isRestoringRef.current = false;
             }, 0);
-            alert("ドリルデータをインポートしました");
+            
+            addGlobalNotification({
+              type: "success",
+              message: "ドリルデータをインポートしました",
+            });
           }
-        } else {
-          alert("インポートに失敗しました。ファイル形式を確認してください。");
+        } catch (error) {
+          addGlobalNotification({
+            type: "error",
+            message: "インポートに失敗しました",
+            details: error instanceof Error ? error.message : String(error),
+          });
         }
       };
       reader.readAsText(file);
     };
     input.click();
-  }, [restoreState, isRestoringRef]);
+  }, [restoreState, isRestoringRef, updateSettings, members, settings]);
 
   // 画像エクスポート（オプション選択後）
   const handleExportImageWithOptions = useCallback(

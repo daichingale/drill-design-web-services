@@ -4,6 +4,7 @@
 import yaml from "js-yaml";
 import type { UiSet } from "./uiTypes";
 import type { Member } from "./types";
+import type { Settings } from "@/context/SettingsContext";
 
 const STORAGE_KEY_DRILL = "drill-design-sets";
 const STORAGE_KEY_MEMBERS = "drill-design-members";
@@ -16,6 +17,7 @@ export type SavedDrillData = {
   version: string;
   sets: UiSet[];
   savedAt: string;
+  settings?: Settings; // フィールド設定（後方互換性のためオプショナル）
 };
 
 export type DrillMetadata = {
@@ -131,16 +133,17 @@ export function loadMembersFromLocalStorage(): Member[] | null {
 
 // ===== JSON エクスポート/インポート =====
 
-export function exportDrillToJSON(sets: UiSet[]): string {
+export function exportDrillToJSON(sets: UiSet[], settings?: Settings): string {
   const data: SavedDrillData = {
     version: CURRENT_VERSION,
     sets,
     savedAt: new Date().toISOString(),
+    settings,
   };
   return JSON.stringify(data, null, 2);
 }
 
-export function importDrillFromJSON(jsonString: string): UiSet[] | null {
+export function importDrillFromJSON(jsonString: string): { sets: UiSet[]; settings?: Settings } | null {
   try {
     const data: SavedDrillData = JSON.parse(jsonString);
     
@@ -162,7 +165,7 @@ export function importDrillFromJSON(jsonString: string): UiSet[] | null {
       nextMove: set.nextMove || "",
     }));
 
-    return sets;
+    return { sets, settings: data.settings };
   } catch (error) {
     console.error("Failed to import drill data:", error);
     return null;
@@ -201,11 +204,12 @@ export function importMembersFromJSON(jsonString: string): Member[] | null {
 
 // ===== YAML エクスポート/インポート =====
 
-export function exportDrillToYAML(sets: UiSet[]): string {
+export function exportDrillToYAML(sets: UiSet[], settings?: Settings): string {
   const data: SavedDrillData = {
     version: CURRENT_VERSION,
     sets,
     savedAt: new Date().toISOString(),
+    settings,
   };
   
   // YAML形式で出力（コメント付き）
@@ -227,7 +231,7 @@ export function exportDrillToYAML(sets: UiSet[]): string {
 ${yamlString}`;
 }
 
-export function importDrillFromYAML(yamlString: string): UiSet[] | null {
+export function importDrillFromYAML(yamlString: string): { sets: UiSet[]; settings?: Settings } | null {
   try {
     // YAMLをパース
     const data = yaml.load(yamlString) as SavedDrillData;
@@ -254,7 +258,7 @@ export function importDrillFromYAML(yamlString: string): UiSet[] | null {
       nextMove: set.nextMove || "",
     }));
 
-    return sets;
+    return { sets, settings: data.settings };
   } catch (error) {
     console.error("Failed to import drill data from YAML:", error);
     return null;

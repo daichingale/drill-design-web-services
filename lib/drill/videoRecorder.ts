@@ -19,7 +19,8 @@ export async function record2DAnimation(
   captureFrame: () => Promise<Blob | null>,
   shouldStop: () => boolean,
   options: RecordingOptions = {},
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  audioStream?: MediaStream | null
 ): Promise<Blob | null> {
   const fps = options.fps || 30;
   const width = options.width || 1920;
@@ -38,6 +39,13 @@ export async function record2DAnimation(
 
     // MediaRecorderで録画
     const stream = canvas.captureStream(fps);
+
+    // オーディオトラックがあればストリームに追加（キャンバス映像 + 音声）
+    if (audioStream) {
+      audioStream.getAudioTracks().forEach((track) => {
+        stream.addTrack(track);
+      });
+    }
     
     // 利用可能なMIMEタイプを確認
     let mimeType = "video/webm;codecs=vp9";
