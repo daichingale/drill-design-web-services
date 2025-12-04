@@ -839,8 +839,9 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
         {/* 回転ハンドル（選択メンバーが2人以上の場合） */}
         {selectedIds.length >= 2 && !isPlaying && !activeArc && onRotateSelected && (() => {
           // 選択メンバーの中心を計算（現在の位置から）
+          // 注意: displayPositionsではなくcurrentSetPositionsを使うことで、編集モードでの正確な中心を計算
           const selectedPositions = selectedIds
-            .map((id) => displayPositions[id])
+            .map((id) => currentSetPositions[id] || displayPositions[id])
             .filter((p): p is WorldPos => p !== undefined);
 
           if (selectedPositions.length < 2) return null;
@@ -890,9 +891,10 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
                   rotationCenterRef.current = center;
                   
                   // 初期位置を保存（回転の基準点として使用）
+                  // currentSetPositionsを使う（編集モードでの正確な位置）
                   rotationInitialPositionsRef.current = {};
                   selectedIds.forEach((id) => {
-                    const pos = displayPositions[id];
+                    const pos = currentSetPositions[id] || displayPositions[id];
                     if (pos) {
                       rotationInitialPositionsRef.current![id] = { ...pos };
                     }
@@ -902,7 +904,8 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
                   if (
                     rotationStartAngleRef.current === null ||
                     !rotationCenterRef.current ||
-                    !rotationInitialPositionsRef.current
+                    !rotationInitialPositionsRef.current ||
+                    !onRotateSelected
                   ) return;
                   
                   // 現在のマウス位置から角度を計算
@@ -912,41 +915,17 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
                   const dy = handleWorld.y - rotationCenterRef.current.y;
                   const currentAngle = Math.atan2(dy, dx);
                   
-                  // 開始角度からの差分を計算（シンプルな2D回転）
-                  const totalAngle = currentAngle - rotationStartAngleRef.current;
+                  // 開始角度からの差分を計算（ハンドルの向きが角度そのもの）
+                  // ハンドルが一周したら360°回転するようにする
+                  let totalAngle = currentAngle - rotationStartAngleRef.current;
                   
-                  // 初期位置を基準に回転を計算（累積を避ける）
-                  // シンプルな2D回転行列を使用
-                  const cos = Math.cos(totalAngle);
-                  const sin = Math.sin(totalAngle);
+                  // 角度の正規化（-π ～ π の範囲に）
+                  if (totalAngle > Math.PI) totalAngle -= 2 * Math.PI;
+                  if (totalAngle < -Math.PI) totalAngle += 2 * Math.PI;
                   
-                  // 初期位置から回転した位置を計算
-                  selectedIds.forEach((id) => {
-                    const initialPos = rotationInitialPositionsRef.current![id];
-                    if (!initialPos) return;
-                    
-                    // 中心からの相対位置
-                    const relX = initialPos.x - rotationCenterRef.current!.x;
-                    const relY = initialPos.y - rotationCenterRef.current!.y;
-                    
-                    // 回転後の相対位置
-                    const rotatedRelX = relX * cos - relY * sin;
-                    const rotatedRelY = relX * sin + relY * cos;
-                    
-                    // 絶対位置に変換
-                    const newPos: WorldPos = {
-                      x: rotationCenterRef.current!.x + rotatedRelX,
-                      y: rotationCenterRef.current!.y + rotatedRelY,
-                    };
-                    
-                    // 位置を更新（回転中はスナップを適用しない - 精度を保つため）
-                    // ただし、フィールド外には出さない
-                    const clampedPos: WorldPos = {
-                      x: Math.min(Math.max(newPos.x, 0), fieldWidth),
-                      y: Math.min(Math.max(newPos.y, 0), fieldHeight),
-                    };
-                    onMoveMember(id, clampedPos);
-                  });
+                  // onRotateSelectedコールバックで回転を適用（リアルタイム更新）
+                  // 初期位置を基準に回転するため、累積を避ける
+                  onRotateSelected(rotationCenterRef.current, totalAngle);
                   
                   // ハンドルの位置を更新（中心からの固定距離を保つ）
                   const handleDistanceWorld = handleDistance / baseScaleX; // ワールド座標での距離
@@ -958,8 +937,8 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
                   e.target.position({ x: newHandleCanvas.x, y: newHandleCanvas.y });
                 }}
                 onDragEnd={(e: any) => {
-                  // ドラッグ終了時にスナップを適用（回転の精度を保つため、ドラッグ中はスナップしない）
-                  if (rotationInitialPositionsRef.current && rotationCenterRef.current && rotationStartAngleRef.current !== null) {
+                  // ドラッグ終了時に回転を確定
+                  if (rotationInitialPositionsRef.current && rotationCenterRef.current && rotationStartAngleRef.current !== null && onRotateSelected) {
                     // 現在のハンドル位置から最終角度を取得
                     const handleElement = e.target;
                     const handlePos = handleElement.position();
@@ -967,30 +946,14 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
                     const dx = handleWorld.x - rotationCenterRef.current.x;
                     const dy = handleWorld.y - rotationCenterRef.current.y;
                     const finalAngle = Math.atan2(dy, dx);
-                    const totalAngle = finalAngle - rotationStartAngleRef.current;
+                    let totalAngle = finalAngle - rotationStartAngleRef.current;
                     
-                    // 最終的な回転を適用（スナップ付き）
-                    const cos = Math.cos(totalAngle);
-                    const sin = Math.sin(totalAngle);
+                    // 角度の正規化（-π ～ π の範囲に）
+                    if (totalAngle > Math.PI) totalAngle -= 2 * Math.PI;
+                    if (totalAngle < -Math.PI) totalAngle += 2 * Math.PI;
                     
-                    selectedIds.forEach((id) => {
-                      const initialPos = rotationInitialPositionsRef.current![id];
-                      if (!initialPos) return;
-                      
-                      const relX = initialPos.x - rotationCenterRef.current!.x;
-                      const relY = initialPos.y - rotationCenterRef.current!.y;
-                      
-                      const rotatedRelX = relX * cos - relY * sin;
-                      const rotatedRelY = relX * sin + relY * cos;
-                      
-                      const newPos: WorldPos = {
-                        x: rotationCenterRef.current!.x + rotatedRelX,
-                        y: rotationCenterRef.current!.y + rotatedRelY,
-                      };
-                      
-                      // ドラッグ終了時にスナップを適用
-                      onMoveMember(id, clampAndSnap(newPos));
-                    });
+                    // onRotateSelectedコールバックで回転を適用（選択メンバー全体を中心軸で回転）
+                    onRotateSelected(rotationCenterRef.current, totalAngle);
                   }
                   
                   rotationStartAngleRef.current = null;

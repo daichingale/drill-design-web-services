@@ -33,9 +33,12 @@ import {
   clearMembersFromLocalStorage,
 } from "@/lib/drill/storage";
 import ExportOptionsDialog from "@/components/drill/ExportOptionsDialog";
+import PrintPreviewDialog from "@/components/drill/PrintPreviewDialog";
 import MetadataDialog from "@/components/drill/MetadataDialog";
 import { useMusicSync } from "@/hooks/useMusicSync";
 import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
+import MusicAnalysisPanel from "@/components/drill/MusicAnalysisPanel";
+import LearningPanel from "@/components/drill/LearningPanel";
 import StatisticsPanel from "@/components/drill/StatisticsPanel";
 // import VideoConverterPanel from "@/components/drill/VideoConverterPanel"; // 一時的に非表示
 import CommandPalette, { type Command } from "@/components/drill/CommandPalette";
@@ -305,6 +308,8 @@ export default function DrillPage() {
     arrangeSpiral,
     arrangeBox,
     rotateSelected,
+    setRotationInitialPositions,
+    clearRotationInitialPositions,
     scaleSelected,
   } = useDrillSets(members as any, clampAndSnap);
 
@@ -550,8 +555,8 @@ export default function DrillPage() {
     }
   }, [defaultScale, canvasScale, setZoom]);
 
-  // 再生中のみ playbackPositions を表示に使う（停止中は通常のSET位置を使う）
-  const hasPlayback = isPlaying && Object.keys(playbackPositions).length > 0;
+  // 再生中または再生停止後も playbackPositions がある場合はそれを使う（停止中は通常のSET位置を使う）
+  const hasPlayback = Object.keys(playbackPositions).length > 0;
   // 一時的な位置がある場合は「現在のSETの位置」に上書きする形で表示し、
   // 存在しないメンバーが消えて見えないようにする
   const basePositionsForDisplay = currentSet.positions as Record<string, WorldPos>;
@@ -677,6 +682,11 @@ export default function DrillPage() {
     exportDialogOpen,
     setExportDialogOpen,
     pendingExportType,
+    previewDialogOpen,
+    setPreviewDialogOpen,
+    previewOptions,
+    handlePreview,
+    handlePreviewPrint,
     handleSave,
     handleLoad,
     handleExportJSON,
@@ -771,6 +781,106 @@ export default function DrillPage() {
       message: `${clipboardData.memberIds.length}個のメンバーを貼り付けました`,
     });
   }, [sets, currentSetId, pasteFromClipboard, restoreState]);
+
+  // ★ Pythonバックエンドを使ったフォーメーション自動生成
+  const handleAutoGenerateFormation = useCallback(
+    async (shape: "circle" | "line" | "v" | "grid" | "auto" = "auto") => {
+      const targetIds = selectedIds.length > 0 ? selectedIds : members.map((m) => m.id);
+      if (targetIds.length === 0) {
+        addGlobalNotification({
+          type: "warning",
+          message: "フォーメーションを自動生成するメンバーを選択してください",
+        });
+        return;
+      }
+
+      // 形状のデフォルト選択
+      let shapeToUse: "circle" | "line" | "v" | "grid" = "circle";
+      if (shape === "auto") {
+        // 人数が多いときはグリッド、小さいときは円形にする簡易ロジック
+        shapeToUse = targetIds.length >= 24 ? "grid" : "circle";
+      } else {
+        shapeToUse = shape;
+      }
+
+      try {
+        const partDistribution: Record<string, number> = {};
+        members.forEach((m) => {
+          if (!partDistribution[m.part]) partDistribution[m.part] = 0;
+          partDistribution[m.part] += 1;
+        });
+
+        const payload = {
+          member_count: targetIds.length,
+          part_distribution: partDistribution,
+          shape: shapeToUse,
+          constraints: {
+            fieldWidth: settings.fieldWidth,
+            fieldHeight: settings.fieldHeight,
+          },
+        };
+
+        const resp = await fetch("/api/formation/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!resp.ok) {
+          const text = await resp.text();
+          console.error("[auto-formation] API error:", resp.status, text);
+          addGlobalNotification({
+            type: "error",
+            message: "フォーメーション自動生成APIでエラーが発生しました",
+          });
+          return;
+        }
+
+        const data: {
+          positions: { x: number; y: number; member_index: number }[];
+        } = await resp.json();
+
+        if (!data.positions || data.positions.length === 0) {
+          addGlobalNotification({
+            type: "warning",
+            message: "自動生成結果が空でした",
+          });
+          return;
+        }
+
+        // 現在のSETに結果を適用
+        const updatedSets = sets.map((set) => {
+          if (set.id !== currentSetId) return set;
+
+          const newPositions = { ...set.positions };
+          data.positions.forEach((p) => {
+            const id = targetIds[p.member_index];
+            if (!id) return;
+            newPositions[id] = clampAndSnap({ x: p.x, y: p.y });
+          });
+
+          return {
+            ...set,
+            positions: newPositions,
+          };
+        });
+
+        restoreState(updatedSets, targetIds, currentSetId);
+
+        addGlobalNotification({
+          type: "success",
+          message: `フォーメーションを自動生成しました（${shapeToUse} / ${targetIds.length}人）`,
+        });
+      } catch (error) {
+        console.error("[auto-formation] Unexpected error:", error);
+        addGlobalNotification({
+          type: "error",
+          message: "フォーメーション自動生成中にエラーが発生しました",
+        });
+      }
+    },
+    [selectedIds, members, settings.fieldWidth, settings.fieldHeight, sets, currentSetId, clampAndSnap, restoreState]
+  );
 
   // 削除機能（選択メンバーをドリル全体から削除）
   const handleDelete = useCallback(() => {
@@ -1334,6 +1444,13 @@ export default function DrillPage() {
         // ボックス整列モードを設定（モーダルで処理）
       },
     },
+    {
+      id: "auto-formation",
+      label: "フォーメーション自動生成（Python）",
+      icon: "🤖",
+      group: "arrange",
+      action: () => handleAutoGenerateFormation("auto"),
+    },
     // 変形
     {
       id: "rotate",
@@ -1659,12 +1776,22 @@ export default function DrillPage() {
 
   // ★ 再生ビューを抜けてから編集するためのラッパーたち
   const handleToggleSelectWrapped = (id: string, multi: boolean = false) => {
-    clearPlaybackView();
     handleToggleSelect(id, multi);
   };
 
+  // 回転操作中かどうかを追跡
+  const isRotatingRef = useRef(false);
+  
+  // 選択が変更された時に回転の初期位置をリセット
+  useEffect(() => {
+    clearRotationInitialPositions();
+  }, [selectedIds, clearRotationInitialPositions]);
+  
   const handleMoveWrapped = (id: string, pos: WorldPos) => {
-    clearPlaybackView();
+    // 回転操作中はclearPlaybackViewを呼ばない（無限ループを防ぐ）
+    if (!isRotatingRef.current) {
+      clearPlaybackView();
+    }
     // 位置編集時は一時的な位置として保存（確定はしない）
     setPendingPositions((prev) => {
       const basePositions = prev || currentSet.positions;
@@ -1765,14 +1892,38 @@ export default function DrillPage() {
   }, [pendingPositions, currentCount, currentSetId, sets, selectedIds, restoreState, setLineEditState, setBoxEditState]);
 
   const handleSelectBulkWrapped = (ids: string[]) => {
-    clearPlaybackView();
+    // 選択操作だけでは再生結果をクリアしない（編集を始めた時だけクリア）
     handleSelectBulk(ids);
   };
 
-  const nudgeSelectedWrapped = (dx: number, dy: number) => {
+  const nudgeSelectedWrapped = useCallback((dx: number, dy: number) => {
     clearPlaybackView();
+    
+    // 矢印キー移動後、pendingPositionsを更新して位置確定可能にする
+    if (selectedIds.length > 0) {
+      const currentSet = sets.find((s) => s.id === currentSetId);
+      if (currentSet) {
+        // 移動前の位置を取得して、移動後の位置を計算
+        const newPendingPositions: Record<string, WorldPos> = {};
+        selectedIds.forEach((id) => {
+          const pos = currentSet.positions[id];
+          if (pos) {
+            const raw = { x: pos.x + dx, y: pos.y + dy };
+            newPendingPositions[id] = clampAndSnap(raw);
+          }
+        });
+        
+        // pendingPositionsを更新（既存の位置とマージ）
+        setPendingPositions((prev) => ({
+          ...prev,
+          ...newPendingPositions,
+        }));
+      }
+    }
+    
+    // nudgeSelectedを呼んで実際の位置を更新
     nudgeSelected(dx, dy);
-  };
+  }, [selectedIds, sets, currentSetId, clampAndSnap, nudgeSelected, clearPlaybackView]);
 
   // じっくりモード用：一括追加直後の初期配置レイアウト確定
   const handleConfirmNewMembersLayout = useCallback(
@@ -2118,6 +2269,43 @@ export default function DrillPage() {
         return;
       }
 
+      // 回転ツール中（2人以上選択）かつ左右の矢印キーの場合、回転処理
+      if (selectedIds.length >= 2 && (key === "ArrowLeft" || key === "ArrowRight")) {
+        e.preventDefault();
+        
+        // 回転中心を計算
+        const currentSet = sets.find((s) => s.id === currentSetId);
+        if (!currentSet) return;
+        
+        const selectedPositions = selectedIds
+          .map((id) => currentSet.positions[id])
+          .filter((p): p is WorldPos => p !== undefined);
+        
+        if (selectedPositions.length === 0) return;
+        
+        const center: WorldPos = {
+          x: selectedPositions.reduce((sum, p) => sum + p.x, 0) / selectedPositions.length,
+          y: selectedPositions.reduce((sum, p) => sum + p.y, 0) / selectedPositions.length,
+        };
+        
+        // 初期位置が保存されていない場合は保存
+        setRotationInitialPositions();
+        
+        // 10°ずつ回転（度をラジアンに変換）
+        const angleStep = (10 * Math.PI) / 180;
+        const rotationAngle = key === "ArrowLeft" ? -angleStep : angleStep;
+        
+        // 回転を適用（累積角度を追加）
+        isRotatingRef.current = true;
+        rotateSelected(center, rotationAngle, true, true);
+        setTimeout(() => {
+          isRotatingRef.current = false;
+        }, 0);
+        
+        return;
+      }
+
+      // 通常の移動処理
       const division =
         snapMode === "whole" ? 1 : snapMode === "half" ? 2 : 4;
       const baseStep = STEP_M / division;
@@ -2143,6 +2331,7 @@ export default function DrillPage() {
   }, [
     snapMode,
     selectedIds,
+    nudgeSelectedWrapped,
     isPlaying,
     members,
     handleSelectBulkWrapped,
@@ -2331,7 +2520,23 @@ export default function DrillPage() {
         onConfirm={(options) => handleExportOptionsConfirm(options, drillDataName)}
         sets={sets}
         allowSetSelection={pendingExportType === "pdf" || pendingExportType === "print" || pendingExportType === "image"}
+        onPreview={pendingExportType === "print" ? handlePreview : undefined}
       />
+
+      {/* 印刷プレビューダイアログ */}
+      {previewOptions && (
+        <PrintPreviewDialog
+          isOpen={previewDialogOpen}
+          onClose={() => {
+            setPreviewDialogOpen(false);
+          }}
+          onPrint={handlePreviewPrint}
+          set={currentSet}
+          canvasElement={document.querySelector(".field-canvas-container") as HTMLElement}
+          options={previewOptions}
+          members={members}
+        />
+      )}
       
       {/* メタデータ編集ダイアログ */}
       <MetadataDialog
@@ -2529,7 +2734,12 @@ export default function DrillPage() {
                   clampAndSnap={clampAndSnap}
                   onRotateSelected={(center, angle) => {
                     if (selectedIds.length >= 2) {
+                      isRotatingRef.current = true;
                       rotateSelected(center, angle);
+                      // 回転操作が完了したらフラグをリセット
+                      setTimeout(() => {
+                        isRotatingRef.current = false;
+                      }, 0);
                     }
                   }}
                   individualPlacementMode={individualPlacementMode}
@@ -2556,6 +2766,14 @@ export default function DrillPage() {
                 onMoveSelectionOrder={handleMoveSelectionOrder}
                 followLeaderMode={followLeaderMode}
                 onToggleFollowLeader={() => setFollowLeaderMode((prev) => !prev)}
+                onRotateSelected={(center, angle) => {
+                  isRotatingRef.current = true;
+                  // 初期位置を基準に回転する（累積を避ける）
+                  rotateSelected(center, angle, true);
+                  setTimeout(() => {
+                    isRotatingRef.current = false;
+                  }, 0);
+                }}
                 onFilterMembers={setFilteredMemberIds}
                 onFilterSets={setFilteredSetIds}
                 onAddMember={() => {
@@ -2808,6 +3026,22 @@ export default function DrillPage() {
               )}
             </div>
 
+            {/* 音楽分析パネル（AI解析） */}
+            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+              <MusicAnalysisPanel
+                onAnalysisComplete={(result) => {
+                  // BPMを自動設定
+                  if (result.bpm) {
+                    setBPM(result.bpm);
+                  }
+                }}
+                onSectionsDetected={(sections) => {
+                  // セクション情報を保存（後で使用）
+                  console.log("検出されたセクション:", sections);
+                }}
+              />
+            </div>
+
             {/* 音楽同期パネル */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-4 shadow-xl">
               <MusicSyncPanel
@@ -2828,6 +3062,27 @@ export default function DrillPage() {
                 currentCount={currentCount}
                 playbackBPM={playbackBPM}
                 onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
+              />
+            </div>
+
+            {/* 学習・提案パネル */}
+            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+              <LearningPanel
+                sets={sets}
+                members={members}
+                drillTitle={drillTitle}
+                onSaveDrill={() => {
+                  addGlobalNotification({
+                    type: "success",
+                    message: "ドリルを学習データとして保存しました",
+                  });
+                }}
+                onSuggestPattern={(section) => {
+                  addGlobalNotification({
+                    type: "info",
+                    message: `${section}用のパターン提案機能は今後実装予定です`,
+                  });
+                }}
               />
             </div>
 

@@ -183,10 +183,15 @@ export function useDrillPlayback(
             setPlaybackPositions(loopPositions);
           } else {
             // 通常レンジ: 終了カウントに到達したら停止
+            // 終了カウントにクランプしてから、その時点の位置を取得して残す
+            engine.setCount(range.endCount);
+            const finalPositions = engine.getCurrentPositionsMap();
+
             engine.pause();
             setIsPlaying(false);
+            setCurrentCount(range.endCount); // 終了カウントを設定
+            setPlaybackPositions(finalPositions); // 終了位置を保持
             playRangeRef.current = null;
-            setPlaybackPositions({});
           }
         }
       }
@@ -265,10 +270,16 @@ export function useDrillPlayback(
 
   const stopPlay = () => {
     const engine = engineRef.current;
-    if (engine) engine.pause();
+    if (engine) {
+      engine.pause();
+      // 手動停止時も、停止した時点の位置とカウントを画面に残す
+      const currentCountAtStop = engine.currentCount;
+      const finalPositions = engine.getCurrentPositionsMap();
+      setCurrentCount(currentCountAtStop); // シークバーも停止位置に合わせる
+      setPlaybackPositions(finalPositions);
+    }
     playRangeRef.current = null;
     setIsPlaying(false);
-    setPlaybackPositions({});
   };
 
   const setRecordingMode = (recording: boolean) => {

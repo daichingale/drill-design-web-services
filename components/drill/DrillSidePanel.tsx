@@ -11,6 +11,117 @@ import {
 import SearchFilterPanel from "./SearchFilterPanel";
 import type { UiSet } from "@/lib/drill/uiTypes";
 
+// 回転操作UIコンポーネント
+function RotationControl({
+  selectedIds,
+  members,
+  currentSetPositions,
+  onRotateSelected,
+}: {
+  selectedIds: string[];
+  members: BasicMember[];
+  currentSetPositions: Record<string, WorldPos>;
+  onRotateSelected: (center: WorldPos, angle: number) => void;
+}) {
+  const [rotationAngle, setRotationAngle] = useState<string>("0");
+  const [rotationCenterType, setRotationCenterType] = useState<"center" | "first" | "last" | "leftmost" | "rightmost" | "topmost" | "bottommost">("center");
+  
+  // 回転中心を計算
+  const getRotationCenter = (): WorldPos => {
+    const selectedPositions = selectedIds
+      .map((id) => currentSetPositions[id])
+      .filter((p): p is WorldPos => p !== undefined);
+    
+    if (selectedPositions.length === 0) {
+      return { x: 0, y: 0 };
+    }
+    
+    switch (rotationCenterType) {
+      case "center":
+        return {
+          x: selectedPositions.reduce((sum, p) => sum + p.x, 0) / selectedPositions.length,
+          y: selectedPositions.reduce((sum, p) => sum + p.y, 0) / selectedPositions.length,
+        };
+      case "first":
+        return selectedPositions[0] || { x: 0, y: 0 };
+      case "last":
+        return selectedPositions[selectedPositions.length - 1] || { x: 0, y: 0 };
+      case "leftmost": {
+        const leftmost = selectedPositions.reduce((min, p) => p.x < min.x ? p : min);
+        return leftmost;
+      }
+      case "rightmost": {
+        const rightmost = selectedPositions.reduce((max, p) => p.x > max.x ? p : max);
+        return rightmost;
+      }
+      case "topmost": {
+        const topmost = selectedPositions.reduce((min, p) => p.y < min.y ? p : min);
+        return topmost;
+      }
+      case "bottommost": {
+        const bottommost = selectedPositions.reduce((max, p) => p.y > max.y ? p : max);
+        return bottommost;
+      }
+      default:
+        return { x: 0, y: 0 };
+    }
+  };
+  
+  const handleRotate = () => {
+    const angleDeg = parseFloat(rotationAngle);
+    if (isNaN(angleDeg)) return;
+    
+    const angleRad = (angleDeg * Math.PI) / 180;
+    const center = getRotationCenter();
+    onRotateSelected(center, angleRad);
+  };
+  
+  return (
+    <div className="mt-3 p-2.5 rounded-md bg-slate-800/40 border border-slate-700/40 space-y-2">
+      <p className="text-xs text-slate-400/90 uppercase tracking-wider mb-2">回転</p>
+      
+      {/* 回転角度入力 */}
+      <div className="space-y-1">
+        <label className="text-[10px] text-slate-400">角度（度）</label>
+        <div className="flex gap-1">
+          <input
+            type="number"
+            value={rotationAngle}
+            onChange={(e) => setRotationAngle(e.target.value)}
+            className="flex-1 px-2 py-1 text-xs rounded bg-slate-900/50 border border-slate-700/50 text-slate-200"
+            placeholder="0"
+            step="1"
+          />
+          <button
+            onClick={handleRotate}
+            className="px-3 py-1 text-xs rounded bg-blue-600/80 hover:bg-blue-600 text-white"
+          >
+            適用
+          </button>
+        </div>
+      </div>
+      
+      {/* 回転軸選択 */}
+      <div className="space-y-1">
+        <label className="text-[10px] text-slate-400">回転軸</label>
+        <select
+          value={rotationCenterType}
+          onChange={(e) => setRotationCenterType(e.target.value as any)}
+          className="w-full px-2 py-1 text-xs rounded bg-slate-900/50 border border-slate-700/50 text-slate-200"
+        >
+          <option value="center">中心</option>
+          <option value="first">最初のメンバー</option>
+          <option value="last">最後のメンバー</option>
+          <option value="leftmost">一番左</option>
+          <option value="rightmost">一番右</option>
+          <option value="topmost">一番上</option>
+          <option value="bottommost">一番下</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+
 type BasicMember = {
   id: string;
   name: string;
@@ -38,6 +149,8 @@ type Props = {
   // フォローザリーダーモード
   followLeaderMode?: boolean;
   onToggleFollowLeader?: () => void;
+  // 回転操作
+  onRotateSelected?: (center: WorldPos, angle: number) => void;
 };
 
 type TabType = "selection" | "management";
@@ -274,6 +387,16 @@ export default function DrillSidePanel({
                     >
                       {followLeaderMode ? "✓ フォローザリーダー ON" : "フォローザリーダー OFF"}
                     </button>
+                  )}
+                  
+                  {/* 回転操作UI */}
+                  {onRotateSelected && selectedIds.length >= 2 && (
+                    <RotationControl
+                      selectedIds={selectedIds}
+                      members={members}
+                      currentSetPositions={currentSetPositions}
+                      onRotateSelected={onRotateSelected}
+                    />
                   )}
                 </div>
                 <div className="max-h-40 overflow-auto space-y-1.5">

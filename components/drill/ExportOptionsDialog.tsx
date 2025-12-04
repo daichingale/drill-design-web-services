@@ -11,6 +11,12 @@ export type ExportOptions = {
   includeInstructions: boolean;
   includeField: boolean;
   selectedSetIds?: string[]; // 選択されたSetのIDリスト
+  // 印刷オプション
+  showGrid?: boolean; // グリッド線の表示/非表示
+  showMemberInfo?: boolean; // メンバー情報の表示/非表示
+  customHeader?: string; // カスタムヘッダー
+  customFooter?: string; // カスタムフッター
+  setsPerPage?: number; // セットごとのページ分割（1 = 1セット/ページ）
 };
 
 type Props = {
@@ -20,6 +26,7 @@ type Props = {
   defaultOptions?: Partial<ExportOptions>;
   sets?: UiSet[]; // Setリスト
   allowSetSelection?: boolean; // Set選択を許可するか（PDF/印刷の場合）
+  onPreview?: (options: ExportOptions) => void; // プレビュー機能（印刷時のみ）
 };
 
 export default function ExportOptionsDialog({
@@ -29,6 +36,7 @@ export default function ExportOptionsDialog({
   defaultOptions,
   sets = [],
   allowSetSelection = false,
+  onPreview,
 }: Props) {
   const [options, setOptions] = useState<ExportOptions>({
     includeSetName: defaultOptions?.includeSetName ?? true,
@@ -37,6 +45,12 @@ export default function ExportOptionsDialog({
     includeInstructions: defaultOptions?.includeInstructions ?? true,
     includeField: defaultOptions?.includeField ?? true,
     selectedSetIds: defaultOptions?.selectedSetIds ?? (sets.length > 0 ? sets.map(s => s.id) : []),
+    // 印刷オプション（デフォルト値）
+    showGrid: defaultOptions?.showGrid ?? true,
+    showMemberInfo: defaultOptions?.showMemberInfo ?? true,
+    customHeader: defaultOptions?.customHeader ?? "",
+    customFooter: defaultOptions?.customFooter ?? "",
+    setsPerPage: defaultOptions?.setsPerPage ?? 1,
   });
 
   // ダイアログが開かれたときに選択状態をリセット
@@ -198,6 +212,70 @@ export default function ExportOptionsDialog({
               <span className="text-sm text-slate-200">フィールド画像</span>
             </label>
           </div>
+
+          {/* 印刷オプション（印刷時のみ表示） */}
+          {allowSetSelection && (
+            <div className="space-y-3 pt-3 border-t border-slate-700">
+              <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+                印刷オプション
+              </h3>
+              
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={options.showGrid ?? true}
+                  onChange={() => setOptions(prev => ({ ...prev, showGrid: !(prev.showGrid ?? true) }))}
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500"
+                />
+                <span className="text-sm text-slate-200">グリッド線を表示</span>
+              </label>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={options.showMemberInfo ?? true}
+                  onChange={() => setOptions(prev => ({ ...prev, showMemberInfo: !(prev.showMemberInfo ?? true) }))}
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-emerald-500 focus:ring-emerald-500"
+                />
+                <span className="text-sm text-slate-200">メンバー情報を表示</span>
+              </label>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-200">カスタムヘッダー</label>
+                <textarea
+                  value={options.customHeader ?? ""}
+                  onChange={(e) => setOptions(prev => ({ ...prev, customHeader: e.target.value }))}
+                  placeholder="印刷時のヘッダーに表示するテキスト（空欄可）"
+                  className="w-full px-3 py-2 rounded bg-slate-900/50 border border-slate-600 text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/70 resize-none"
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-200">カスタムフッター</label>
+                <textarea
+                  value={options.customFooter ?? ""}
+                  onChange={(e) => setOptions(prev => ({ ...prev, customFooter: e.target.value }))}
+                  placeholder="印刷時のフッターに表示するテキスト（空欄可）"
+                  className="w-full px-3 py-2 rounded bg-slate-900/50 border border-slate-600 text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/70 resize-none"
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-200">ページ分割</label>
+                <select
+                  value={options.setsPerPage ?? 1}
+                  onChange={(e) => setOptions(prev => ({ ...prev, setsPerPage: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 rounded bg-slate-900/50 border border-slate-600 text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/70"
+                >
+                  <option value={1}>1セット/ページ</option>
+                  <option value={2}>2セット/ページ</option>
+                  <option value={4}>4セット/ページ</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-700">
@@ -207,6 +285,17 @@ export default function ExportOptionsDialog({
           >
             キャンセル
           </button>
+          {onPreview && (
+            <button
+              onClick={() => {
+                if (onPreview) onPreview(options);
+              }}
+              disabled={allowSetSelection && (!options.selectedSetIds || options.selectedSetIds.length === 0)}
+              className="px-4 py-2 rounded bg-blue-600/80 hover:bg-blue-600 disabled:bg-slate-700/30 disabled:text-slate-500 disabled:cursor-not-allowed text-white transition-colors text-sm font-semibold"
+            >
+              プレビュー
+            </button>
+          )}
           <button
             onClick={handleConfirm}
             disabled={allowSetSelection && (!options.selectedSetIds || options.selectedSetIds.length === 0)}

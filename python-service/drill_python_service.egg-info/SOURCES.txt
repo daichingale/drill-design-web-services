@@ -1,0 +1,8 @@
+README.md
+pyproject.toml
+app/main.py
+drill_python_service.egg-info/PKG-INFO
+drill_python_service.egg-info/SOURCES.txt
+drill_python_service.egg-info/dependency_links.txt
+drill_python_service.egg-info/requires.txt
+drill_python_service.egg-info/top_level.txt

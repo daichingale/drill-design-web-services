@@ -307,7 +307,12 @@ function printSingleSet(
     includeNote?: boolean;
     includeInstructions?: boolean;
     includeField?: boolean;
+    showGrid?: boolean;
+    showMemberInfo?: boolean;
+    customHeader?: string;
+    customFooter?: string;
   },
+  members?: Member[],
   isFirst: boolean = true
 ): void {
   const printWindow = window.open("", isFirst ? "_blank" : "_blank");
@@ -318,8 +323,13 @@ function printSingleSet(
     return;
   }
 
+  // カスタムヘッダー
+  const customHeaderHTML = options.customHeader
+    ? `<div class="print-custom-header">${escapeHtml(options.customHeader).replace(/\n/g, "<br>")}</div>`
+    : "";
+
   // セット情報のHTMLを生成（タイトルとカウントのみ）
-  let headerHTML = "";
+  let headerHTML = customHeaderHTML;
 
   if (options.includeSetName !== false) {
     headerHTML += `<div class="print-title">${set.name || "Set"}</div>`;
@@ -328,6 +338,34 @@ function printSingleSet(
   if (options.includeCount !== false) {
     headerHTML += `<div class="print-count">Start Count: ${set.startCount}</div>`;
   }
+
+  // メンバー情報のHTMLを生成
+  let memberInfoHTML = "";
+  if (options.showMemberInfo !== false && members && members.length > 0) {
+    const membersInSet = members.filter(m => set.positions[m.id]);
+    if (membersInSet.length > 0) {
+      memberInfoHTML = `
+        <div class="print-member-info">
+          <div class="print-member-info-label">メンバー情報</div>
+          <div class="print-member-list">
+            ${membersInSet.map(m => {
+              const pos = set.positions[m.id];
+              return `<div class="print-member-item">
+                <span class="print-member-name">${escapeHtml(m.name)}</span>
+                <span class="print-member-part">(${escapeHtml(m.part)})</span>
+                <span class="print-member-pos">x: ${pos.x.toFixed(1)}, y: ${pos.y.toFixed(1)}</span>
+              </div>`;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  // カスタムフッター
+  const customFooterHTML = options.customFooter
+    ? `<div class="print-custom-footer">${escapeHtml(options.customFooter).replace(/\n/g, "<br>")}</div>`
+    : "";
 
   const html = `
     <!DOCTYPE html>
@@ -415,6 +453,64 @@ function printSingleSet(
             color: #999;
             font-style: italic;
           }
+          .print-custom-header {
+            font-size: 14px;
+            font-weight: bold;
+            color: #000;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #000;
+          }
+          .print-custom-footer {
+            font-size: 11px;
+            color: #666;
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px solid #ccc;
+            text-align: center;
+          }
+          .print-member-info {
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background: #f9f9f9;
+          }
+          .print-member-info-label {
+            font-size: 12px;
+            font-weight: bold;
+            color: #000;
+            margin-bottom: 8px;
+          }
+          .print-member-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 5px;
+          }
+          .print-member-item {
+            font-size: 10px;
+            color: #333;
+            padding: 3px 0;
+          }
+          .print-member-name {
+            font-weight: bold;
+          }
+          .print-member-part {
+            color: #666;
+            margin: 0 5px;
+          }
+          .print-member-pos {
+            color: #999;
+            font-family: monospace;
+            font-size: 9px;
+          }
+          .print-canvas {
+            ${options.showGrid === false ? `
+            /* グリッド線を非表示 */
+            .grid-line {
+              display: none !important;
+            }
+            ` : ""}
+          }
         </style>
       </head>
       <body>
@@ -428,6 +524,7 @@ function printSingleSet(
             </div>
           </div>` : ""}
           <div class="print-text-boxes">
+            ${memberInfoHTML}
             ${options.includeInstructions !== false ? `<div class="print-text-box">
               <div class="print-text-box-label">Move（動き方・指示）</div>
               <div class="print-text-box-content">${set.instructions ? escapeHtml(set.instructions).replace(/\n/g, "<br>") : "（未記入）"}</div>
@@ -442,6 +539,7 @@ function printSingleSet(
             </div>
           </div>
         </div>
+        ${customFooterHTML}
       </body>
     </html>
   `;
@@ -468,14 +566,21 @@ export function printCurrentSet(
     includeNote?: boolean;
     includeInstructions?: boolean;
     includeField?: boolean;
+    showGrid?: boolean;
+    showMemberInfo?: boolean;
+    customHeader?: string;
+    customFooter?: string;
   } = {
     includeSetName: true,
     includeCount: true,
     includeNote: true,
     includeInstructions: true,
     includeField: true,
-  }
+    showGrid: true,
+    showMemberInfo: true,
+  },
+  members?: Member[]
 ): void {
-  printSingleSet(canvasElement, set, options, true);
+  printSingleSet(canvasElement, set, options, members, true);
 }
 

@@ -1,7 +1,7 @@
 // hooks/useDrillSets.ts
 "use client";
 
-import { useEffect,useCallback,useState } from "react";
+import { useEffect,useCallback,useState,useRef } from "react";
 import type { WorldPos, Member, ArcBinding } from "@/lib/drill/types";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import { useSettings } from "@/context/SettingsContext";
@@ -1031,8 +1031,13 @@ const handleSelectBulk = (ids: string[]) => {
   );
 
   // 変形・回転関数（中心が指定されていない場合は選択メンバーの中心を使用）
+  // 回転の初期位置を保存（累積回転を避けるため）
+  const rotationInitialPositionsRef = useRef<Record<string, WorldPos> | null>(null);
+  const rotationCenterRef = useRef<WorldPos | null>(null);
+  const rotationTotalAngleRef = useRef<number>(0); // 累積角度を管理
+  
   const rotateSelected = useCallback(
-    (center: WorldPos, angle: number) => {
+    (center: WorldPos, angle: number, useInitialPositions: boolean = false, addToTotal: boolean = false) => {
       if (selectedIds.length === 0) {
         alert("メンバーを選択してください");
         return;
@@ -1055,11 +1060,41 @@ const handleSelectBulk = (ids: string[]) => {
         }
       }
 
+      // 回転中心を保存
+      rotationCenterRef.current = actualCenter;
+
+      // 累積角度を更新（addToTotalがtrueの場合）
+      if (addToTotal) {
+        rotationTotalAngleRef.current += angle;
+      }
+
       setSets((prev) =>
         prev.map((set) => {
           if (set.id !== currentSetId) return set;
-          // シンプルな2D回転：現在の位置を中心に回転
-          const newPositions = rotateSelectedUtil(selectedIds, set.positions, actualCenter, angle);
+          
+          // 初期位置を基準に回転する場合
+          let positionsToRotate = set.positions;
+          let rotationAngle = angle;
+          
+          if (useInitialPositions && rotationInitialPositionsRef.current) {
+            // 初期位置に戻してから回転
+            positionsToRotate = { ...set.positions };
+            selectedIds.forEach((id) => {
+              const initialPos = rotationInitialPositionsRef.current![id];
+              if (initialPos) {
+                positionsToRotate[id] = initialPos;
+              }
+            });
+            
+            // 累積角度を使用
+            if (addToTotal) {
+              rotationAngle = rotationTotalAngleRef.current;
+            }
+          }
+          
+          // シンプルな2D回転：初期位置（または現在の位置）を中心に回転
+          const newPositions = rotateSelectedUtil(selectedIds, positionsToRotate, actualCenter, rotationAngle);
+          
           // clampAndSnapを適用
           Object.keys(newPositions).forEach((id) => {
             if (selectedIds.includes(id)) {
@@ -1072,6 +1107,29 @@ const handleSelectBulk = (ids: string[]) => {
     },
     [selectedIds, currentSetId, clampAndSnap, sets]
   );
+  
+  // 回転の初期位置を設定
+  const setRotationInitialPositions = useCallback(() => {
+    const currentSet = sets.find((s) => s.id === currentSetId);
+    if (currentSet) {
+      rotationInitialPositionsRef.current = {};
+      selectedIds.forEach((id) => {
+        const pos = currentSet.positions[id];
+        if (pos) {
+          rotationInitialPositionsRef.current![id] = { ...pos };
+        }
+      });
+      // 累積角度をリセット
+      rotationTotalAngleRef.current = 0;
+    }
+  }, [selectedIds, currentSetId, sets]);
+  
+  // 回転の初期位置をクリア
+  const clearRotationInitialPositions = useCallback(() => {
+    rotationInitialPositionsRef.current = null;
+    rotationCenterRef.current = null;
+    rotationTotalAngleRef.current = 0;
+  }, []);
 
   const scaleSelected = useCallback(
     (center: WorldPos, scaleX: number, scaleY?: number) => {
@@ -1147,6 +1205,8 @@ const handleSelectBulk = (ids: string[]) => {
 
     // 変形・回転
     rotateSelected,
+    setRotationInitialPositions,
+    clearRotationInitialPositions,
     scaleSelected,
 
     arcBinding,

@@ -48,6 +48,8 @@ export function useDrillExport({
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [pendingExportType, setPendingExportType] = useState<"image" | "pdf" | "print" | null>(null);
   const [pendingImageFormat, setPendingImageFormat] = useState<"png" | "jpeg">("png");
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
+  const [previewOptions, setPreviewOptions] = useState<ExportOptions | null>(null);
 
   // 保存・読み込み関数
   const handleSave = useCallback(() => {
@@ -558,11 +560,17 @@ export function useDrillExport({
               elementToPrint = canvasElement as HTMLElement;
             }
             
-            await printCurrentSet(elementToPrint, set, options);
+            await printCurrentSet(elementToPrint, set, options, members);
             
-            // 複数Setの場合は少し待機
-            if (i < setsToPrint.length - 1) {
-              await new Promise(resolve => setTimeout(resolve, 500));
+            // ページ分割: setsPerPageに基づいて待機
+            const setsPerPage = options.setsPerPage ?? 1;
+            const shouldWait = (i + 1) % setsPerPage === 0 && i < setsToPrint.length - 1;
+            if (shouldWait) {
+              // ページが変わる場合は少し長めに待機
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } else if (i < setsToPrint.length - 1) {
+              // 同じページ内の場合は短めに待機
+              await new Promise(resolve => setTimeout(resolve, 300));
             }
           }
           
@@ -577,7 +585,7 @@ export function useDrillExport({
             alert("印刷する要素が見つかりません");
             return;
           }
-          await printCurrentSet(canvasElement as HTMLElement, currentSet, options);
+          await printCurrentSet(canvasElement as HTMLElement, currentSet, options, members);
         }
       } catch (error) {
         console.error("Print error:", error);
@@ -602,10 +610,30 @@ export function useDrillExport({
     [pendingExportType, pendingImageFormat, handleExportImageWithOptions, handleExportPDFWithOptions, handlePrintWithOptions]
   );
 
+  // プレビュー機能（印刷時のみ）
+  const handlePreview = useCallback(
+    (options: ExportOptions) => {
+      setPreviewOptions(options);
+      setPreviewDialogOpen(true);
+    },
+    []
+  );
+
+  const handlePreviewPrint = useCallback(() => {
+    if (previewOptions) {
+      handlePrintWithOptions(previewOptions);
+      setPreviewDialogOpen(false);
+      setPreviewOptions(null);
+    }
+  }, [previewOptions, handlePrintWithOptions]);
+
   return {
     exportDialogOpen,
     setExportDialogOpen,
-    pendingExportType, // 追加
+    pendingExportType,
+    previewDialogOpen,
+    setPreviewDialogOpen,
+    previewOptions,
     handleSave,
     handleLoad,
     handleExportJSON,
@@ -616,6 +644,8 @@ export function useDrillExport({
     handleExportPDF,
     handlePrint,
     handleExportOptionsConfirm,
+    handlePreview,
+    handlePreviewPrint,
   };
 }
 

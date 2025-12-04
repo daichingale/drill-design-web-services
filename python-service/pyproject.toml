@@ -1,0 +1,31 @@
+[project]
+name = "drill-python-service"
+version = "0.1.0"
+description = "Drill design helper backend (AI / music / optimization) powered by Python"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.6",  # ファイルアップロードに必要
+    "numpy>=1.26.0",  # 数値計算
+    "scipy>=1.11.0",  # 科学計算
+    # librosaはPython 3.14未対応のため、後で追加
+    # Python 3.13以下を使う場合は以下をコメントアウト解除:
+    # "librosa>=0.10.0",  # 音楽分析（Python 3.10-3.13のみ対応）
+    # "soundfile>=0.12.0",  # 音声ファイル読み込み
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
+]
+
+[tool.uvicorn]
+app = "app.main:app"
+host = "0.0.0.0"
+port = 8000
+reload = true
+
+
+
