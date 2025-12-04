@@ -58,6 +58,7 @@ type UseDrillSetsResult = {
   arrangeLineSelected: () => void;
   arrangeLineBySelectionOrder: () => void; // 選択順に整列
   reorderSelection: (direction: 'up' | 'down') => void; // 選択順を入れ替え
+  moveSelectionOrder: (fromIndex: number, toIndex: number) => void; // 特定のインデックスを移動
 
   // 形状作成
   arrangeCircle: (center: WorldPos, radius: number) => void;
@@ -96,21 +97,9 @@ export function useDrillSets(
     x: Math.min(Math.max(p.x, 0), fieldWidth),
     y: Math.min(Math.max(p.y, 0), fieldHeight),
   }), [fieldWidth, fieldHeight]);
-  const initialSetId = `set-init-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  const [sets, setSets] = useState<UiSet[]>([
-    {
-      id: initialSetId,
-      name: "",
-      startCount: 0,
-      positions: {},
-      note: "",
-      instructions: "",
-      nextMove: "",
-    },
-  ]);
+  const [sets, setSets] = useState<UiSet[]>([]);
 
-  const [currentSetId, setCurrentSetId] = useState(initialSetId);
+  const [currentSetId, setCurrentSetId] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [arcBinding, setArcBinding] = useState<ArcBinding | null>(null);
 
@@ -160,7 +149,17 @@ export function useDrillSets(
   );
   
 
-  const currentSet = sets.find((s) => s.id === currentSetId) ?? sets[0];
+  const currentSet: UiSet =
+    sets.find((s) => s.id === currentSetId) ??
+    sets[0] ?? {
+      id: currentSetId || "set-placeholder",
+      name: "",
+      startCount: 0,
+      positions: {},
+      note: "",
+      instructions: "",
+      nextMove: "",
+    };
 
   // メンバー追加・削除に応じて初期配置
   // memberAddMode が "quick" のときだけ自動配置を行い、"careful" のときは自動で位置を付けない
@@ -383,17 +382,17 @@ const handleMove = (id: string, newPosRaw: WorldPos) => {
   // セットを削除
   const deleteSet = useCallback((id: string) => {
     setSets((prev) => {
-      if (prev.length <= 1) {
-        alert("最後のセットは削除できません");
-        return prev;
-      }
-
       const filtered = prev.filter((s) => s.id !== id);
       const renumbered = renumberSetsByOrder(filtered);
 
-      // 削除されたセットが現在のセットの場合、最初のセットに切り替え
-      if (id === currentSetId && renumbered.length > 0) {
-        setCurrentSetId(renumbered[0].id);
+      // 削除されたセットが現在のセットの場合
+      if (id === currentSetId) {
+        if (renumbered.length > 0) {
+          setCurrentSetId(renumbered[0].id);
+        } else {
+          // すべてのSETがなくなった場合
+          setCurrentSetId("");
+        }
         setSelectedIds([]);
       }
 
@@ -677,6 +676,46 @@ const handleSelectBulk = (ids: string[]) => {
       const last = newSelectedIds.pop();
       if (last) newSelectedIds.unshift(last);
     }
+
+    // 選択順を更新
+    setSelectedIds(newSelectedIds);
+
+    // 位置も瞬時に入れ替え
+    setSets((prev) =>
+      prev.map((set) => {
+        if (set.id !== currentSetId) return set;
+
+        const newPositions: Record<string, WorldPos> = { ...set.positions };
+        
+        // 現在の位置を取得
+        const currentPositions = selectedIds.map(id => ({
+          id,
+          pos: set.positions[id] || { x: 0, y: 0 }
+        }));
+
+        // 新しい順序で位置を再配置
+        newSelectedIds.forEach((id, idx) => {
+          const oldIdx = selectedIds.indexOf(id);
+          if (oldIdx !== -1 && currentPositions[oldIdx]) {
+            newPositions[id] = currentPositions[oldIdx].pos;
+          }
+        });
+
+        return { ...set, positions: newPositions };
+      })
+    );
+  };
+
+  // 特定のインデックスを移動（順序変更）
+  const moveSelectionOrder = (fromIndex: number, toIndex: number) => {
+    if (selectedIds.length < 2) return;
+    if (fromIndex < 0 || fromIndex >= selectedIds.length) return;
+    if (toIndex < 0 || toIndex >= selectedIds.length) return;
+    if (fromIndex === toIndex) return;
+
+    const newSelectedIds = [...selectedIds];
+    const [moved] = newSelectedIds.splice(fromIndex, 1);
+    newSelectedIds.splice(toIndex, 0, moved);
 
     // 選択順を更新
     setSelectedIds(newSelectedIds);
@@ -1098,6 +1137,7 @@ const handleSelectBulk = (ids: string[]) => {
     arrangeLineSelected,
     arrangeLineBySelectionOrder,
     reorderSelection,
+    moveSelectionOrder,
 
     // 形状作成
     arrangeCircle,

@@ -94,7 +94,8 @@ type UseDrillPlaybackResult = {
 export function useDrillPlayback(
   sets: UiSet[],
   members: DrillMember[],
-  playbackBPM: number = 120 // デフォルトはBPM=120（1秒で2カウント）
+  playbackBPM: number = 120, // デフォルトはBPM=120（1秒で2カウント）
+  loopRangeEnabled: boolean = false
 ): UseDrillPlaybackResult {
   const [currentCount, setCurrentCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -168,11 +169,25 @@ export function useDrillPlayback(
 
         const range = playRangeRef.current;
         // 録画中は自動停止しない
-        if (range && engine.currentCount >= range.endCount && !isRecordingRef.current && !musicSyncModeRef.current) {
-          engine.pause();
-          setIsPlaying(false);
-          playRangeRef.current = null;
-          setPlaybackPositions({});
+        if (
+          range &&
+          engine.currentCount >= range.endCount &&
+          !isRecordingRef.current &&
+          !musicSyncModeRef.current
+        ) {
+          if (loopRangeEnabled) {
+            // ループレンジ: 終了カウントに到達したら開始カウントに戻して再生継続
+            engine.setCount(range.startCount);
+            const loopPositions = engine.getCurrentPositionsMap();
+            setCurrentCount(range.startCount);
+            setPlaybackPositions(loopPositions);
+          } else {
+            // 通常レンジ: 終了カウントに到達したら停止
+            engine.pause();
+            setIsPlaying(false);
+            playRangeRef.current = null;
+            setPlaybackPositions({});
+          }
         }
       }
 
@@ -181,7 +196,7 @@ export function useDrillPlayback(
 
     frameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frameId);
-  }, [isPlaying]);
+  }, [isPlaying, loopRangeEnabled]);
 
   // スクラブ（ドラッグで動かす）
   const handleScrub = (count: number) => {

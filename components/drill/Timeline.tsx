@@ -1,7 +1,7 @@
 // components/drill/Timeline.tsx
 "use client";
 
-import React, { useRef } from "react";
+import React, { useRef, useEffect } from "react";
 
 type TimelineSet = {
   id: string;
@@ -29,6 +29,8 @@ export type TimelineProps = {
   rangeEndCount: number;
   onChangeRangeStart: (count: number) => void;
   onChangeRangeEnd: (count: number) => void;
+  loopRangeEnabled?: boolean;
+  onToggleLoopRange?: () => void;
   drillTitle?: string;
   onClickDrillTitle?: () => void;
 };
@@ -539,8 +541,7 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   drillTitle,
   onClickDrillTitle,
 }) => {
-  if (!sets || sets.length === 0) return null;
-
+  // SETが0件でも、タイムライン自体は表示し続ける
   const segments = [...sets].sort((a, b) => a.startCount - b.startCount);
 
   const inferredMax =
@@ -561,6 +562,7 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
     segments.some((s) => Math.round(s.startCount) === roundedCurrent);
 
   const barRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const isDraggingRef = useRef(false);
   // RANGE はハンドルのみドラッグ可能（バー全体ドラッグはオフ）
   const rangeDragRef = useRef<"start" | "end" | null>(null);
@@ -583,6 +585,19 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
     if (extra) extra(clamped);
   };
 
+  const autoScrollIfNeeded = (clientX: number) => {
+    if (!scrollRef.current) return;
+    const rect = scrollRef.current.getBoundingClientRect();
+    const edge = 32; // 端から何px以内でオートスクロールを開始するか
+    const speed = 24; // 1イベントあたりのスクロール量(px)
+
+    if (clientX > rect.right - edge) {
+      scrollRef.current.scrollLeft += speed;
+    } else if (clientX < rect.left + edge) {
+      scrollRef.current.scrollLeft -= speed;
+    }
+  };
+
   const handleMouseDown = (
     e: React.MouseEvent<HTMLDivElement, MouseEvent>
   ) => {
@@ -593,6 +608,11 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   const handleMouseMove = (
     e: React.MouseEvent<HTMLDivElement, MouseEvent>
   ) => {
+    // ドラッグ中のみオートスクロールを有効化
+    if (isDraggingRef.current || rangeDragRef.current) {
+      autoScrollIfNeeded(e.clientX);
+    }
+
     // RANGE ハンドルをドラッグ中
     if (rangeDragRef.current && barRef.current) {
       const rect = barRef.current.getBoundingClientRect();
@@ -600,11 +620,12 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
       const count = clampCount(Math.round(x / pxPerCount));
 
       if (rangeDragRef.current === "start") {
-        const nextStart = Math.min(count, rangeEnd - 1);
-        onChangeRangeStart(nextStart);
+        // 開始ハンドル側は、親コンポーネント側で
+        // 「開始値と終了値が入れ替わる」ロジックを持つため、
+        // ここではそのまま通知する
+        onChangeRangeStart(count);
       } else if (rangeDragRef.current === "end") {
-        const nextEnd = Math.max(count, rangeStart + 1);
-        onChangeRangeEnd(nextEnd);
+        onChangeRangeEnd(count);
       }
       return;
     }
@@ -618,6 +639,21 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
     isDraggingRef.current = false;
     rangeDragRef.current = null;
   };
+
+  // マウスがタイムライン外で離された場合でもドラッグ状態を終了させる
+  useEffect(() => {
+    const handleWindowMouseUp = () => {
+      if (isDraggingRef.current || rangeDragRef.current) {
+        stopDragging();
+      }
+    };
+    window.addEventListener("mouseup", handleWindowMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleWindowMouseUp);
+    };
+  }, []);
+
+  const isLoopRangeActive = rangeEndCount > rangeStartCount;
 
   const handleKeyDown = (
     e: React.KeyboardEvent<HTMLDivElement>
@@ -715,13 +751,13 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
             overflowX: "auto",
             overflowY: "hidden",
           }}
+          ref={scrollRef}
         >
           <div
             ref={barRef}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={stopDragging}
-            onMouseLeave={stopDragging}
             onDoubleClick={(e) => {
               scrubAtClientX(e.clientX, (c) => {
                 if (onToggleSetAtCount) onToggleSetAtCount(c);
@@ -875,6 +911,8 @@ export default function Timeline(props: TimelineProps) {
     rangeEndCount,
     onChangeRangeStart,
     onChangeRangeEnd,
+    loopRangeEnabled = false,
+    onToggleLoopRange,
     drillTitle,
     onClickDrillTitle,
   } = props;
@@ -925,52 +963,102 @@ export default function Timeline(props: TimelineProps) {
   const inferredMax = sortedSets.reduce((max, s) => Math.max(max, s.endCount), 0) || 0;
   const totalCounts = Math.max(512, inferredMax || 1);
 
+  // Loop RangeボタンのON/OFF状態（デフォルトOFF）
+  const isLoopRangeActive = !!loopRangeEnabled;
+
   return (
     <div className="w-full flex justify-center">
       <div className="w-full max-w-[800px] space-y-3">
         {/* Range header (上) */}
         <div className="flex flex-wrap items-center gap-3 text-[11px] px-2">
+          {/* 左側: LOOP RANGE コントロール（DAW風） */}
           <div className="flex items-center gap-2">
-            <span
-              className="text-slate-300 text-[11px] uppercase tracking-[0.12em] font-semibold cursor-pointer select-none"
+            <button
+              type="button"
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] transition-colors border ${
+                isLoopRangeActive
+                  ? "bg-slate-700/90 border-emerald-400/90 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.7)]"
+                  : "bg-slate-800/70 border-slate-600/70 text-slate-200 hover:bg-slate-700/80 hover:border-emerald-500/70 hover:text-emerald-300"
+              }`}
+              onClick={() => {
+                if (onToggleLoopRange) {
+                  onToggleLoopRange();
+                }
+              }}
               onDoubleClick={() => {
                 // Range リセット：全体を対象に
                 onChangeRangeStart(0);
                 onChangeRangeEnd(totalCounts);
               }}
+              title="ダブルクリックで全体範囲にリセット"
             >
-              Range
-            </span>
-            <input
-              type="number"
-              className="w-16 rounded-md border border-slate-600 bg-slate-950 px-1.5 py-0.5 text-[11px] text-slate-200 hover:bg-slate-900 transition-colors"
-              value={Math.round(rangeStartCount)}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                onChangeRangeStart(isNaN(v) ? 0 : v);
-              }}
-            />
-            <span className="text-slate-400 text-[10px]">→</span>
-            <input
-              type="number"
-              className="w-16 rounded-md border border-slate-600 bg-slate-950 px-1.5 py-0.5 text-[11px] text-slate-200 hover:bg-slate-900 transition-colors"
-              value={Math.round(rangeEndCount)}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                onChangeRangeEnd(isNaN(v) ? 0 : v);
-              }}
-            />
+              <span className="text-[9px]">{isLoopRangeActive ? "⟳" : "◯"}</span>
+              <span>{isLoopRangeActive ? "LOOP RANGE ON" : "LOOP TANGE OFF"}</span>
+            </button>
+
+            {/* Start / End の小さなパネル */}
+            <div className="flex items-center gap-1 rounded-full bg-slate-900/80 border border-slate-700/80 px-2 py-0.5">
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-slate-500">Start</span>
+                <input
+                  type="number"
+                  className="w-14 rounded bg-slate-950 border border-slate-600/80 px-1 py-0.5 text-[11px] text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/70 hover:bg-slate-900 transition-colors"
+                  value={Math.round(rangeStartCount)}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    onChangeRangeStart(isNaN(v) ? 0 : v);
+                  }}
+                />
+              </div>
+              <span className="text-slate-500 text-[10px] px-1">→</span>
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] text-slate-500">End</span>
+                <input
+                  type="number"
+                  className="w-14 rounded bg-slate-950 border border-slate-600/80 px-1 py-0.5 text-[11px] text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/70 hover:bg-slate-900 transition-colors"
+                  value={Math.round(rangeEndCount)}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    onChangeRangeEnd(isNaN(v) ? 0 : v);
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* セット or カウント情報のサマリ */}
+            {sets.length === 0 ? (
+              <div className="text-[10px] text-slate-400/80 px-2 py-1 rounded-md bg-slate-800/40 border border-slate-700/60">
+                Count{" "}
+                <span className="text-slate-200 font-medium">
+                  {Math.round(rangeStartCount)}
+                </span>{" "}
+                →{" "}
+                <span className="text-slate-200 font-medium">
+                  {Math.round(rangeEndCount)}
+                </span>{" "}
+                <span className="text-slate-500">(SETなし・カウントのみ)</span>
+              </div>
+            ) : (
+              startSet &&
+              endSet && (
+                <div className="text-[10px] text-slate-400/80 px-2 py-1 rounded-md bg-slate-800/40 border border-slate-700/60">
+                  Count{" "}
+                  <span className="text-slate-200 font-medium">
+                    {startCountValue}
+                  </span>{" "}
+                  →{" "}
+                  <span className="text-slate-200 font-medium">
+                    {endCountValue}
+                  </span>
+                </div>
+              )
+            )}
           </div>
 
-          {startSet && endSet && (
-            <div className="text-[10px] text-slate-400/80 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/40">
-              (Count {startCountValue} → Count {endCountValue})
-            </div>
-          )}
-
+          {/* 右側: 現在カウント表示 */}
           <div className="ml-auto flex items-center gap-2 text-[10px]">
-            <span className="text-slate-400/90 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/40">
-              Now:{" "}
+            <span className="text-slate-400/90 px-2 py-1 rounded-md bg-slate-800/40 border border-slate-700/60">
+              Now{" "}
               <span className="text-slate-200 font-medium">
                 {Math.round(currentCount)}
               </span>{" "}

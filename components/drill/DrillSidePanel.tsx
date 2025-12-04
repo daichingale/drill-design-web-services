@@ -1,7 +1,7 @@
 // components/drill/DrillSidePanel.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { WorldPos } from "../../lib/drill/types";
 import { PART_LIST } from "../../app/constants/parts";
 import {
@@ -32,6 +32,12 @@ type Props = {
   onImportMembers?: (members: BasicMember[]) => void;
   onFilterMembers?: (filteredIds: string[]) => void;
   onFilterSets?: (filteredIds: string[]) => void;
+  // 選択順序の変更
+  onReorderSelection?: (direction: 'up' | 'down') => void;
+  onMoveSelectionOrder?: (fromIndex: number, toIndex: number) => void;
+  // フォローザリーダーモード
+  followLeaderMode?: boolean;
+  onToggleFollowLeader?: () => void;
 };
 
 type TabType = "selection" | "management";
@@ -48,14 +54,23 @@ export default function DrillSidePanel({
   onImportMembers,
   onFilterMembers,
   onFilterSets,
+  onReorderSelection,
+  onMoveSelectionOrder,
+  followLeaderMode = false,
+  onToggleFollowLeader,
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>("selection");
+  const [isMounted, setIsMounted] = useState(false);
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkAddPart, setBulkAddPart] = useState("Flute");
   const [bulkAddCount, setBulkAddCount] = useState(5);
   const [bulkAddStartNum, setBulkAddStartNum] = useState(1);
   const singleSelectedId =
     selectedIds.length === 1 ? selectedIds[0] : null;
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleExportJSON = () => {
     const json = exportMembersToJSON(members as any);
@@ -243,21 +258,129 @@ export default function DrillSidePanel({
             ) : selectedIds.length > 1 ? (
               <div className="text-sm">
                 <div className="mb-3 p-2.5 rounded-md bg-slate-800/40 border border-slate-700/40">
-                  <p className="text-xs text-slate-400/90 mb-1 uppercase tracking-wider">選択中</p>
-                  <p className="text-slate-200 font-semibold">{selectedIds.length}人</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs text-slate-400/90 uppercase tracking-wider">選択中</p>
+                    <p className="text-slate-200 font-semibold">{selectedIds.length}人</p>
+                  </div>
+                  {onToggleFollowLeader && (
+                    <button
+                      onClick={onToggleFollowLeader}
+                      className={`mt-2 w-full px-2 py-1 text-xs rounded-md transition-colors ${
+                        followLeaderMode
+                          ? "bg-emerald-600/80 hover:bg-emerald-600 text-white"
+                          : "bg-slate-700/40 hover:bg-slate-700/60 text-slate-300"
+                      }`}
+                      title="フォローザリーダーモード: 先頭のメンバーに他のメンバーが追従します"
+                    >
+                      {followLeaderMode ? "✓ フォローザリーダー ON" : "フォローザリーダー OFF"}
+                    </button>
+                  )}
                 </div>
                 <div className="max-h-40 overflow-auto space-y-1.5">
-                  {selectedIds.map((id) => {
+                  {selectedIds.map((id, index) => {
                     const m = members.find((mm) => mm.id === id);
                     if (!m) return null;
+                    const isLeader = index === 0;
                     return (
-                      <div key={id} className="p-2 rounded-md bg-slate-800/30 border border-slate-700/30 text-xs">
+                      <div
+                        key={id}
+                        className={`p-2 rounded-md border text-xs ${
+                          isLeader
+                            ? "bg-emerald-900/30 border-emerald-500/50"
+                            : "bg-slate-800/30 border-slate-700/30"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-mono font-bold ${
+                              isLeader ? "text-emerald-300" : "text-slate-400/80"
+                            }`}>
+                              #{index + 1}
+                            </span>
+                            {isLeader && (
+                              <span className="text-[10px] text-emerald-300 font-semibold">リーダー</span>
+                            )}
+                          </div>
+                          {onMoveSelectionOrder && (
+                            <div className="flex gap-1">
+                              {index > 0 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMoveSelectionOrder(index, index - 1);
+                                  }}
+                                  className="px-1.5 py-0.5 text-[10px] rounded bg-slate-700/40 hover:bg-slate-700/60 text-slate-300"
+                                  title="順序を上に移動"
+                                >
+                                  ↑
+                                </button>
+                              )}
+                              {index < selectedIds.length - 1 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onMoveSelectionOrder(index, index + 1);
+                                  }}
+                                  className="px-1.5 py-0.5 text-[10px] rounded bg-slate-700/40 hover:bg-slate-700/60 text-slate-300"
+                                  title="順序を下に移動"
+                                >
+                                  ↓
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {!onMoveSelectionOrder && onReorderSelection && (
+                            <div className="flex gap-1">
+                              {index > 0 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // 現在のインデックスまで上に移動するために、必要な回数だけ呼び出す
+                                    // 簡易実装: 先頭に移動
+                                    if (index === 1) {
+                                      onReorderSelection('up');
+                                    }
+                                  }}
+                                  className="px-1.5 py-0.5 text-[10px] rounded bg-slate-700/40 hover:bg-slate-700/60 text-slate-300"
+                                  title="順序を上に移動"
+                                >
+                                  ↑
+                                </button>
+                              )}
+                              {index < selectedIds.length - 1 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // 最後尾に移動するために、必要な回数だけ呼び出す
+                                    // 簡易実装: 1つ下に移動
+                                    if (index === selectedIds.length - 2) {
+                                      onReorderSelection('down');
+                                    }
+                                  }}
+                                  className="px-1.5 py-0.5 text-[10px] rounded bg-slate-700/40 hover:bg-slate-700/60 text-slate-300"
+                                  title="順序を下に移動"
+                                >
+                                  ↓
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                         <p className="font-mono text-slate-400/80 text-[10px] mb-0.5">{m.id}</p>
                         <p className="text-slate-200">{m.name} <span className="text-slate-400/70">({m.part})</span></p>
                       </div>
                     );
                   })}
                 </div>
+              </div>
+            ) : !isMounted ? (
+              // SSRとの不整合を避けるため、初回レンダーは常に同じプレースホルダーを表示
+              <div className="p-4 rounded-md bg-slate-800/30 border border-slate-700/40 border-dashed">
+                <p className="text-slate-400/80 text-sm text-center leading-relaxed">
+                  ドットをクリックしてください。
+                  <br />
+                  <span className="text-xs">（Ctrl+クリックで複数選択）</span>
+                </p>
               </div>
             ) : members.length === 0 ? (
               <div className="p-4 rounded-md bg-slate-800/30 border border-slate-700/40 border-dashed space-y-3">

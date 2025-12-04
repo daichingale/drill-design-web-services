@@ -86,6 +86,8 @@ export default function DrillPage() {
   const [is3DPreviewOpen, setIs3DPreviewOpen] = useState(false);
   // 一時的な位置（確定前）
   const [pendingPositions, setPendingPositions] = useState<Record<string, WorldPos> | null>(null);
+  // フォローザリーダーモード
+  const [followLeaderMode, setFollowLeaderMode] = useState(false);
   // ドリルメタデータ（タイトル・データ名）
   const [drillTitle, setDrillTitle] = useState<string>("");
   const [drillDataName, setDrillDataName] = useState<string>("");
@@ -191,8 +193,9 @@ export default function DrillPage() {
         throw new Error("Invalid drill data: members is missing or not an array");
       }
       
-      // ドリルデータを復元
-      restoreState(data.sets, [], data.sets[0]?.id || "");
+      // ドリルデータを復元（SETが0件でも許可）
+      const firstSetId = data.sets[0]?.id || "";
+      restoreState(data.sets, [], firstSetId);
       setMembers(data.members);
       setDrillTitle(data.title || "");
       setDrillDataName(data.dataName || "");
@@ -284,6 +287,7 @@ export default function DrillPage() {
     arrangeLineSelected,
     arrangeLineBySelectionOrder,
     reorderSelection,
+    moveSelectionOrder: handleMoveSelectionOrder,
     arcBinding,
     startBezierArc,
     clearBezierArc,
@@ -339,6 +343,15 @@ export default function DrillPage() {
   const playbackBPM = settings.playbackBPM;
 
   // 再生系
+  // 再生範囲（開始 / 終了セットの ID）
+  const [playStartId, setPlayStartId] = useState<string>("");
+  const [playEndId, setPlayEndId] = useState<string>("");
+
+  // カウントベースの再生範囲（任意のカウントから任意のカウントまで）
+  const [playRangeStartCount, setPlayRangeStartCount] = useState<number>(0);
+  const [playRangeEndCount, setPlayRangeEndCount] = useState<number>(0);
+  const [loopRangeEnabled, setLoopRangeEnabled] = useState<boolean>(false);
+
   const {
     currentCount,
     isPlaying,
@@ -351,15 +364,31 @@ export default function DrillPage() {
     setRecordingMode,
     setCountFromMusic,
     setMusicSyncMode,
-  } = useDrillPlayback(sets as UiSet[], members as any, playbackBPM);
+  } = useDrillPlayback(sets as UiSet[], members as any, playbackBPM, loopRangeEnabled);
 
-  // 再生範囲（開始 / 終了セットの ID）
-  const [playStartId, setPlayStartId] = useState<string>("");
-  const [playEndId, setPlayEndId] = useState<string>("");
+  // RANGE開始値変更時：終値をまたいだら役割をスワップ
+  const handleRangeStartChange = (c: number) => {
+    const v = Math.max(0, Math.round(c));
+    if (v <= playRangeEndCount) {
+      setPlayRangeStartCount(v);
+    } else {
+      // 役割入れ替え：元のEndがStartに、新しい値がEndに
+      setPlayRangeStartCount(playRangeEndCount);
+      setPlayRangeEndCount(v);
+    }
+  };
 
-  // カウントベースの再生範囲（任意のカウントから任意のカウントまで）
-  const [playRangeStartCount, setPlayRangeStartCount] = useState<number>(0);
-  const [playRangeEndCount, setPlayRangeEndCount] = useState<number>(64);
+  // RANGE終値変更時：開始値をまたいだら役割をスワップ
+  const handleRangeEndChange = (c: number) => {
+    const v = Math.max(0, Math.round(c));
+    if (v >= playRangeStartCount) {
+      setPlayRangeEndCount(v);
+    } else {
+      // 役割入れ替え：元のStartがEndに、新しい値がStartに
+      setPlayRangeEndCount(playRangeStartCount);
+      setPlayRangeStartCount(v);
+    }
+  };
 
   // セットが変わったら再生範囲を自動調整
   useEffect(() => {
@@ -1645,17 +1674,37 @@ export default function DrillPage() {
       if (selectedIds.length > 1 && selectedIds.includes(id)) {
         const oldPos = basePositions[id];
         if (oldPos) {
-          const dx = pos.x - oldPos.x;
-          const dy = pos.y - oldPos.y;
-          
-          // 選択されているすべてのメンバーを同じ距離だけ移動
-          selectedIds.forEach((selId) => {
-            const p = basePositions[selId];
-            if (p) {
-              const moved = clampAndSnap({ x: p.x + dx, y: p.y + dy });
-              newPositions[selId] = moved;
+          // フォローザリーダーモードの場合
+          if (followLeaderMode && selectedIds[0] === id) {
+            // リーダー（先頭）が移動した場合、後続メンバーが前のメンバーの位置に追従
+            const leaderIndex = selectedIds.indexOf(id);
+            if (leaderIndex === 0) {
+              // リーダーの新しい位置を設定
+              newPositions[id] = clampAndSnap(pos);
+              
+              // 後続メンバーが前のメンバーの位置に移動
+              for (let i = 1; i < selectedIds.length; i++) {
+                const currentId = selectedIds[i];
+                const previousId = selectedIds[i - 1];
+                const previousPos = newPositions[previousId];
+                if (previousPos) {
+                  newPositions[currentId] = clampAndSnap(previousPos);
+                }
+              }
             }
-          });
+          } else {
+            // 通常モード: すべてのメンバーを同じ距離だけ移動
+            const dx = pos.x - oldPos.x;
+            const dy = pos.y - oldPos.y;
+            
+            selectedIds.forEach((selId) => {
+              const p = basePositions[selId];
+              if (p) {
+                const moved = clampAndSnap({ x: p.x + dx, y: p.y + dy });
+                newPositions[selId] = moved;
+              }
+            });
+          }
         }
       } else {
         // 単一選択時
@@ -1668,7 +1717,7 @@ export default function DrillPage() {
 
   // 位置を確定する関数
   // - pendingPositions を現在の SET / positionsByCount に書き込み
-  // - かつ「そのカウントを startCount に持つ SET」がなければ新規作成する
+  // - ※ 自動で新しい SET は作らない（SET 追加はユーザー操作のみにする）
   const handleConfirmPositions = useCallback(() => {
     if (!pendingPositions) return;
     
@@ -1700,42 +1749,8 @@ export default function DrillPage() {
       };
     });
 
-    // ① 「現在の確定カウント = startCount を持つ SET」が存在しなければ、新しく SET を追加する
-    const hasSetAtCurrentCount = updatedSets.some(
-      (s) => Math.round(s.startCount) === currentCountRounded
-    );
-
-    let finalSets = updatedSets;
-
-    if (!hasSetAtCurrentCount) {
-      const baseSet = updatedSets.find((s) => s.id === currentSetId) ?? updatedSets[0];
-
-      const newId = `set-${Date.now()}-${Math.random()
-        .toString(36)
-        .substr(2, 9)}`;
-
-      const newSet: UiSet = {
-        id: newId,
-        name: "", // 名前は後からユーザーが付けられるよう空にしておく
-        startCount: currentCountRounded,
-        positions: {
-          // ベースSETの位置をベースに、確定した位置で上書き
-          ...(baseSet?.positions ?? {}),
-          ...pendingPositions,
-        },
-        // メモ類はベースSETを引き継ぐ
-        note: baseSet?.note ?? "",
-        instructions: baseSet?.instructions ?? "",
-        nextMove: baseSet?.nextMove ?? "",
-      };
-
-      finalSets = [...updatedSets, newSet].sort(
-        (a, b) => a.startCount - b.startCount
-      );
-    }
-    
     // restoreStateを使って状態を更新
-    restoreState(finalSets, selectedIds, currentSetId);
+    restoreState(updatedSets, selectedIds, currentSetId);
     
     // 一時的な位置をクリア
     setPendingPositions(null);
@@ -2537,6 +2552,10 @@ export default function DrillPage() {
                 selectedIds={selectedIds}
                 currentSetPositions={displayPositions}
                 sets={sets}
+                onReorderSelection={reorderSelection}
+                onMoveSelectionOrder={handleMoveSelectionOrder}
+                followLeaderMode={followLeaderMode}
+                onToggleFollowLeader={() => setFollowLeaderMode((prev) => !prev)}
                 onFilterMembers={setFilteredMemberIds}
                 onFilterSets={setFilteredSetIds}
                 onAddMember={() => {
@@ -2877,12 +2896,10 @@ export default function DrillPage() {
             onToggleSetAtCount={handleToggleSetAtCount}
             rangeStartCount={playRangeStartCount}
             rangeEndCount={playRangeEndCount}
-            onChangeRangeStart={(c: number) =>
-              setPlayRangeStartCount(Math.max(0, Math.round(c)))
-            }
-            onChangeRangeEnd={(c: number) =>
-              setPlayRangeEndCount(Math.max(0, Math.round(c)))
-            }
+            onChangeRangeStart={handleRangeStartChange}
+            onChangeRangeEnd={handleRangeEndChange}
+            loopRangeEnabled={loopRangeEnabled}
+            onToggleLoopRange={() => setLoopRangeEnabled((prev) => !prev)}
             drillTitle={drillTitle}
             onClickDrillTitle={() => setIsMetadataDialogOpen(true)}
           />

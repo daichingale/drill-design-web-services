@@ -116,7 +116,16 @@ export default function DrillControls({
   onRedo,
 }: Props) {
   const { t } = useTranslation();
-  const currentSet = sets.find((s) => s.id === currentSetId) ?? sets[0];
+  const currentSet =
+    sets.find((s) => s.id === currentSetId) ??
+    sets[0] ?? {
+      id: currentSetId || "set-placeholder",
+      name: "",
+      startCount: 0,
+      note: "",
+      instructions: "",
+      nextMove: "",
+    };
   
   // 現在のカウントからセットを取得（タイムライン連動用）
   const getSetForCount = (count: number): typeof currentSet | null => {

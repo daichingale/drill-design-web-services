@@ -153,7 +153,8 @@ export function useDrillExport({
             if (validation.data.settings) {
               updateSettings(validation.data.settings);
             }
-            restoreState(validation.data.sets, [], validation.data.sets[0]?.id || "");
+            const firstSetId = validation.data.sets[0]?.id || "";
+            restoreState(validation.data.sets, [], firstSetId);
             setTimeout(() => {
               isRestoringRef.current = false;
             }, 0);
