@@ -8,6 +8,7 @@ type TimelineSet = {
   name: string;
   startCount: number;
   endCount: number;
+  hasInstructions?: boolean; // 指示・動き方が入力されているか
 };
 
 export type TimelineProps = {
@@ -236,6 +237,25 @@ const TimelineSegmentsRow: React.FC<SegmentsRowProps> = ({
         const widthPx = Math.max((s.endCount - s.startCount) * pxPerCount, 1);
         const isStart = s.id === playStartId;
         const isEnd = s.id === playEndId;
+        const hasInstructions = s.hasInstructions !== false; // デフォルトはtrue（後方互換性）
+
+        // 指示が未入力の場合のスタイル
+        const missingInstructionsStyle = !hasInstructions
+          ? {
+              background: `
+                repeating-linear-gradient(
+                  45deg,
+                  rgba(239, 68, 68, 0.15),
+                  rgba(239, 68, 68, 0.15) 8px,
+                  rgba(220, 38, 38, 0.1) 8px,
+                  rgba(220, 38, 38, 0.1) 16px
+                ),
+                linear-gradient(to right, rgba(30, 20, 20, 0.9), rgba(30, 20, 20, 0.95))
+              `,
+              borderRight: "1px dashed rgba(239, 68, 68, 0.5)",
+              boxShadow: "inset 0 0 10px rgba(239, 68, 68, 0.1)",
+            }
+          : {};
 
         return (
           <div
@@ -243,11 +263,22 @@ const TimelineSegmentsRow: React.FC<SegmentsRowProps> = ({
             style={{
               width: widthPx,
               height: "100%",
-              borderRight: "1px solid #374151",
+              borderRight: hasInstructions ? "1px solid #374151" : "1px dashed rgba(239, 68, 68, 0.5)",
               position: "relative",
-              background:
-                "linear-gradient(to right, rgba(15,23,42,0.9), rgba(15,23,42,0.95))",
+              background: hasInstructions
+                ? "linear-gradient(to right, rgba(15,23,42,0.9), rgba(15,23,42,0.95))"
+                : `
+                  repeating-linear-gradient(
+                    45deg,
+                    rgba(239, 68, 68, 0.15),
+                    rgba(239, 68, 68, 0.15) 8px,
+                    rgba(220, 38, 38, 0.1) 8px,
+                    rgba(220, 38, 38, 0.1) 16px
+                  ),
+                  linear-gradient(to right, rgba(30, 20, 20, 0.9), rgba(30, 20, 20, 0.95))
+                `,
               boxSizing: "border-box",
+              boxShadow: !hasInstructions ? "inset 0 0 10px rgba(239, 68, 68, 0.1)" : "none",
             }}
           >
             {/* Set name（名前が空なら非表示） */}
@@ -319,6 +350,24 @@ const TimelineSegmentsRow: React.FC<SegmentsRowProps> = ({
                 }}
               >
                 End
+              </span>
+            )}
+            
+            {/* 指示未入力の警告アイコン */}
+            {!hasInstructions && (
+              <span
+                style={{
+                  position: "absolute",
+                  right: isEnd ? 40 : 6,
+                  top: 3,
+                  fontSize: 10,
+                  color: "#f87171",
+                  textShadow: "0 0 4px rgba(239, 68, 68, 0.8)",
+                  zIndex: 10,
+                }}
+                title="指示・動き方が未入力です"
+              >
+                ⚠️
               </span>
             )}
           </div>
@@ -460,6 +509,7 @@ type BaseTimelineProps = {
   onScrub: (count: number) => void;
   onStartPlay: () => void;
   onStopPlay: () => void;
+  onAddSetAtCurrent?: () => void;
   confirmedCounts?: number[]; // 確定されているカウントのリスト
   onToggleSetAtCount?: (count: number) => void;
   rangeStartCount: number;
@@ -479,6 +529,7 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   onScrub,
   onStartPlay,
   onStopPlay,
+  onAddSetAtCurrent,
   confirmedCounts = [],
   onToggleSetAtCount,
   rangeStartCount,
@@ -868,6 +919,11 @@ export default function Timeline(props: TimelineProps) {
     }
     return best.id;
   };
+
+  // totalCountsを計算（BaseTimelineと同じロジック）
+  const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+  const inferredMax = sortedSets.reduce((max, s) => Math.max(max, s.endCount), 0) || 0;
+  const totalCounts = Math.max(512, inferredMax || 1);
 
   return (
     <div className="w-full flex justify-center">

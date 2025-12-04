@@ -11,13 +11,16 @@ type SetSummary = {
   id: string;
   name: string;
   startCount: number;
+  note?: string;
+  instructions?: string;
+  nextMove?: string;
 };
 
 type Props = {
   sets: SetSummary[];
   currentSetId: string;
   onChangeCurrentSet: (id: string) => void;
-  onAddSet: () => void;
+  onAddSet?: () => void; // オプショナルに変更
   onDeleteSet?: (id: string) => void;
   onReorderSet?: (id: string, direction: 'up' | 'down') => void;
   onChangeSetName?: (id: string, name: string) => void; // セット名編集
@@ -52,13 +55,21 @@ type Props = {
   currentCount?: number; // 現在のカウント
   onJumpToCount?: (count: number) => void; // カウントにジャンプする関数
 
-  // テキスト編集
-  currentNote?: string;
-  currentInstructions?: string;
-  currentNextMove?: string;
-  onChangeNote?: (value: string) => void;
-  onChangeInstructions?: (value: string) => void;
-  onChangeNextMove?: (value: string) => void;
+  // テキスト編集（セットIDを指定して更新）
+  onChangeNote?: (setId: string, value: string) => void;
+  onChangeInstructions?: (setId: string, value: string) => void;
+  onChangeNextMove?: (setId: string, value: string) => void;
+  
+  // クイックアクション
+  onQuickDelete?: () => void; // 選択メンバーを削除
+  onQuickCopy?: () => void; // 選択メンバーをコピー
+  onQuickArrangeLine?: () => void; // 直線整列
+  onQuickDeselectAll?: () => void; // 全選択解除
+  hasSelection?: boolean; // 選択されているか
+  canUndo?: boolean; // Undo可能か
+  canRedo?: boolean; // Redo可能か
+  onUndo?: () => void; // Undo
+  onRedo?: () => void; // Redo
 };
 
 export default function DrillControls({
@@ -91,15 +102,55 @@ export default function DrillControls({
   confirmedCounts = [],
   currentCount,
   onJumpToCount,
-  currentNote = "",
-  currentInstructions = "",
-  currentNextMove = "",
   onChangeNote,
   onChangeInstructions,
   onChangeNextMove,
+  onQuickDelete,
+  onQuickCopy,
+  onQuickArrangeLine,
+  onQuickDeselectAll,
+  hasSelection = false,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }: Props) {
   const { t } = useTranslation();
   const currentSet = sets.find((s) => s.id === currentSetId) ?? sets[0];
+  
+  // 現在のカウントからセットを取得（タイムライン連動用）
+  const getSetForCount = (count: number): typeof currentSet | null => {
+    if (!sets.length) return null;
+    const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const roundedCount = Math.round(count);
+    
+    // 現在のカウントが含まれるセットを探す
+    for (let i = sortedSets.length - 1; i >= 0; i--) {
+      if (roundedCount >= Math.round(sortedSets[i].startCount)) {
+        return sortedSets[i];
+      }
+    }
+    return sortedSets[0] || null;
+  };
+  
+  // 現在のカウントに対応するセット（タイムライン連動）
+  const countBasedSet = currentCount !== undefined ? getSetForCount(currentCount) : null;
+  const displaySet = countBasedSet || currentSet;
+  
+  // セットのカウント数を計算（次のセットの開始カウント - 現在のセットの開始カウント）
+  const getSetCount = (set: typeof displaySet): number => {
+    if (!set) return 0;
+    const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const currentIndex = sortedSets.findIndex((s) => s.id === set.id);
+    if (currentIndex === -1) return 0;
+    const nextSet = sortedSets[currentIndex + 1];
+    if (!nextSet) return 0; // 最終セットは0
+    return Math.round(nextSet.startCount) - Math.round(set.startCount);
+  };
+  const setCount = getSetCount(displaySet);
+  
+  // 指示・動き方に入力がない場合にバッジを表示（未読マーク）
+  const hasUnreadInstructions = !displaySet.instructions?.trim();
   
   // 確定済みカウントのナビゲーション
   const currentConfirmedIndex = confirmedCounts.findIndex(c => c === currentCount);
@@ -146,13 +197,17 @@ export default function DrillControls({
         </button>
         <button
           onClick={() => setActiveTab("text")}
-          className={`flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors ${
+          className={`flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors relative ${
             activeTab === "text"
               ? "text-emerald-400 border-b-2 border-emerald-400 bg-slate-800/60"
               : "text-slate-400 hover:text-slate-200"
           }`}
         >
           テキスト
+          {/* Discord風の通知バッジ（指示・動き方が未入力の場合） */}
+          {hasUnreadInstructions && (
+            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-slate-900"></span>
+          )}
         </button>
       </div>
 
@@ -160,16 +215,86 @@ export default function DrillControls({
       <div className="flex-1 overflow-y-auto sidebar-scrollbar p-4 space-y-4">
         {activeTab === "set" ? (
           <>
-      {/* Set 操作（追加など） */}
+      {/* クイックアクション */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">{t("set.operations")}</span>
-        <button
-          type="button"
-          onClick={onAddSet}
-          className="inline-flex items-center rounded-md bg-gradient-to-r from-emerald-600/80 to-emerald-700/80 hover:from-emerald-600 hover:to-emerald-700 border border-emerald-500/50 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap"
-        >
-          ＋ {t("set.add")}
-        </button>
+        <span className="text-xs text-slate-400/90 uppercase tracking-wider whitespace-nowrap">クイックアクション</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* 直線整列 */}
+          {onQuickArrangeLine && (
+            <button
+              type="button"
+              onClick={onQuickArrangeLine}
+              disabled={!hasSelection}
+              className="inline-flex items-center rounded-md bg-gradient-to-r from-blue-600/80 to-blue-700/80 hover:from-blue-600 hover:to-blue-700 disabled:from-slate-600/50 disabled:to-slate-700/50 disabled:cursor-not-allowed border border-blue-500/50 disabled:border-slate-600/30 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap"
+              title="選択メンバーを直線に整列"
+            >
+              📐 直線整列
+            </button>
+          )}
+          
+          {/* コピー */}
+          {onQuickCopy && (
+            <button
+              type="button"
+              onClick={onQuickCopy}
+              disabled={!hasSelection}
+              className="inline-flex items-center rounded-md bg-gradient-to-r from-emerald-600/80 to-emerald-700/80 hover:from-emerald-600 hover:to-emerald-700 disabled:from-slate-600/50 disabled:to-slate-700/50 disabled:cursor-not-allowed border border-emerald-500/50 disabled:border-slate-600/30 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap"
+              title="選択メンバーをコピー (Ctrl+C)"
+            >
+              📋 コピー
+            </button>
+          )}
+          
+          {/* 削除 */}
+          {onQuickDelete && (
+            <button
+              type="button"
+              onClick={onQuickDelete}
+              disabled={!hasSelection}
+              className="inline-flex items-center rounded-md bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-600 hover:to-red-700 disabled:from-slate-600/50 disabled:to-slate-700/50 disabled:cursor-not-allowed border border-red-500/50 disabled:border-slate-600/30 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap"
+              title="選択メンバーを削除 (Delete)"
+            >
+              🗑️ 削除
+            </button>
+          )}
+          
+          {/* 全選択解除 */}
+          {onQuickDeselectAll && (
+            <button
+              type="button"
+              onClick={onQuickDeselectAll}
+              disabled={!hasSelection}
+              className="inline-flex items-center rounded-md bg-gradient-to-r from-slate-600/80 to-slate-700/80 hover:from-slate-600 hover:to-slate-700 disabled:from-slate-600/50 disabled:to-slate-700/50 disabled:cursor-not-allowed border border-slate-500/50 disabled:border-slate-600/30 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap"
+              title="全選択解除 (Ctrl+D)"
+            >
+              ✕ 解除
+            </button>
+          )}
+          
+          {/* Undo/Redo */}
+          {onUndo && (
+            <button
+              type="button"
+              onClick={onUndo}
+              disabled={!canUndo}
+              className="inline-flex items-center rounded-md bg-gradient-to-r from-amber-600/80 to-amber-700/80 hover:from-amber-600 hover:to-amber-700 disabled:from-slate-600/50 disabled:to-slate-700/50 disabled:cursor-not-allowed border border-amber-500/50 disabled:border-slate-600/30 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap"
+              title="元に戻す (Ctrl+Z)"
+            >
+              ↶ Undo
+            </button>
+          )}
+          {onRedo && (
+            <button
+              type="button"
+              onClick={onRedo}
+              disabled={!canRedo}
+              className="inline-flex items-center rounded-md bg-gradient-to-r from-amber-600/80 to-amber-700/80 hover:from-amber-600 hover:to-amber-700 disabled:from-slate-600/50 disabled:to-slate-700/50 disabled:cursor-not-allowed border border-amber-500/50 disabled:border-slate-600/30 px-3 py-1.5 text-sm font-medium text-white shadow-md hover:shadow-lg transition-all duration-200 whitespace-nowrap"
+              title="やり直す (Ctrl+Shift+Z)"
+            >
+              ↷ Redo
+            </button>
+          )}
+        </div>
       </div>
 
       {/* スナップ設定 */}
@@ -561,7 +686,7 @@ export default function DrillControls({
                   セット情報
                 </h3>
                 <span className="text-xs text-slate-400 font-mono">
-                  Count {currentSet.startCount}
+                  {currentCount !== undefined ? `Count ${Math.round(currentCount)}` : `Count ${displaySet.startCount}`}
                 </span>
               </div>
 
@@ -571,8 +696,8 @@ export default function DrillControls({
                   メモ
                 </label>
                 <textarea
-                  value={currentNote}
-                  onChange={(e) => onChangeNote?.(e.target.value)}
+                  value={displaySet.note || ""}
+                  onChange={(e) => onChangeNote?.(displaySet.id, e.target.value)}
                   placeholder="セットのメモを入力..."
                   rows={3}
                   className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner resize-none"
@@ -585,8 +710,8 @@ export default function DrillControls({
                   指示・動き方
                 </label>
                 <textarea
-                  value={currentInstructions}
-                  onChange={(e) => onChangeInstructions?.(e.target.value)}
+                  value={displaySet.instructions || ""}
+                  onChange={(e) => onChangeInstructions?.(displaySet.id, e.target.value)}
                   placeholder="このセットでの動き方、指示を入力..."
                   rows={4}
                   className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner resize-none"
@@ -599,8 +724,8 @@ export default function DrillControls({
                   次のセットへの移動
                 </label>
                 <textarea
-                  value={currentNextMove}
-                  onChange={(e) => onChangeNextMove?.(e.target.value)}
+                  value={displaySet.nextMove || ""}
+                  onChange={(e) => onChangeNextMove?.(displaySet.id, e.target.value)}
                   placeholder="次のセットへの移動方法、カウント数..."
                   rows={3}
                   className="w-full rounded-md bg-slate-700/40 hover:bg-slate-700/60 border border-slate-600/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all duration-200 shadow-inner resize-none"
@@ -613,12 +738,24 @@ export default function DrillControls({
                   <p className="mb-1">
                     <span className="text-slate-500">開始カウント:</span>{" "}
                     <span className="font-mono text-slate-300">
-                      {currentSet.startCount}
+                      {displaySet.startCount}
                     </span>
                   </p>
-                  <p>
+                  <p className="mb-1">
+                    <span className="text-slate-500">セットNo.:</span>{" "}
+                    <span className="text-slate-300">
+                      {sets.findIndex((s) => s.id === displaySet.id) + 1} / {sets.length}
+                    </span>
+                  </p>
+                  <p className="mb-1">
                     <span className="text-slate-500">セット名:</span>{" "}
-                    <span className="text-slate-300">{currentSet.name}</span>
+                    <span className="text-slate-300">{displaySet.name}</span>
+                  </p>
+                  <p>
+                    <span className="text-slate-500">セットのカウント数:</span>{" "}
+                    <span className="font-mono text-slate-300">
+                      {setCount}
+                    </span>
                   </p>
                 </div>
               </div>

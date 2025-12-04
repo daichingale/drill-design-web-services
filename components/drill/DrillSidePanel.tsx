@@ -8,6 +8,8 @@ import {
   exportMembersToJSON,
   importMembersFromJSON,
 } from "@/lib/drill/storage";
+import SearchFilterPanel from "./SearchFilterPanel";
+import type { UiSet } from "@/lib/drill/uiTypes";
 
 type BasicMember = {
   id: string;
@@ -21,12 +23,15 @@ type Props = {
   selectedIds: string[];
   // いま表示しているセットの座標（currentSet.positions を渡す想定）
   currentSetPositions: Record<string, WorldPos>;
+  sets?: UiSet[]; // 検索・フィルタ用
   // メンバー管理機能
   onAddMember?: () => void;
   onAddMultipleMembers?: (members: BasicMember[]) => void;
   onDeleteMember?: (id: string) => void;
   onUpdateMember?: (id: string, field: "name" | "part" | "color", value: string) => void;
   onImportMembers?: (members: BasicMember[]) => void;
+  onFilterMembers?: (filteredIds: string[]) => void;
+  onFilterSets?: (filteredIds: string[]) => void;
 };
 
 type TabType = "selection" | "management";
@@ -35,11 +40,14 @@ export default function DrillSidePanel({
   members,
   selectedIds,
   currentSetPositions,
+  sets = [],
   onAddMember,
   onAddMultipleMembers,
   onDeleteMember,
   onUpdateMember,
   onImportMembers,
+  onFilterMembers,
+  onFilterSets,
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>("selection");
   const [showBulkAdd, setShowBulkAdd] = useState(false);
@@ -281,6 +289,18 @@ export default function DrillSidePanel({
         ) : (
           // メンバー管理
           <div className="flex flex-col h-full">
+            {/* 検索・フィルタパネル */}
+            {(onFilterMembers || onFilterSets) && sets.length > 0 && (
+              <div className="mb-3 shrink-0">
+                <SearchFilterPanel
+                  members={members as any}
+                  sets={sets}
+                  onFilterMembers={onFilterMembers || (() => {})}
+                  onFilterSets={onFilterSets || (() => {})}
+                />
+              </div>
+            )}
+
             {/* ヘッダー（固定） */}
             <div className="mb-3 shrink-0 space-y-2">
               <div className="flex items-center justify-between">

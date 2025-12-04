@@ -39,6 +39,9 @@ import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
 import StatisticsPanel from "@/components/drill/StatisticsPanel";
 // import VideoConverterPanel from "@/components/drill/VideoConverterPanel"; // 一時的に非表示
 import CommandPalette, { type Command } from "@/components/drill/CommandPalette";
+import SaveStatusIndicator from "@/components/drill/SaveStatusIndicator";
+import FileDropZone from "@/components/drill/FileDropZone";
+import SearchFilterPanel from "@/components/drill/SearchFilterPanel";
 import { useMenu } from "@/context/MenuContext";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 import { useClipboard } from "@/context/ClipboardContext";
@@ -95,6 +98,8 @@ export default function DrillPage() {
   const [lineEditState, setLineEditState] = useState<LineEditState>(null);
   const [boxEditState, setBoxEditState] = useState<BoxEditState>(null);
   const [confirmedCountsCollapsed, setConfirmedCountsCollapsed] = useState(false);
+  const [filteredMemberIds, setFilteredMemberIds] = useState<string[]>([]);
+  const [filteredSetIds, setFilteredSetIds] = useState<string[]>([]);
   
   // クリップボード機能
   const { copyToClipboard, pasteFromClipboard } = useClipboard();
@@ -1115,6 +1120,327 @@ export default function DrillPage() {
       group: "import",
       action: handleImportYAML,
     },
+    // セット操作
+    {
+      id: "add-set-tail",
+      label: "セット追加（最後尾）",
+      icon: "➕",
+      group: "set",
+      action: () => addSetTail(),
+    },
+    {
+      id: "add-set-current",
+      label: "セット追加（現在のカウント）",
+      icon: "➕",
+      group: "set",
+      action: () => addSetAtCount(currentCount || 0),
+    },
+    {
+      id: "delete-set",
+      label: "セット削除",
+      icon: "🗑️",
+      group: "set",
+      action: () => {
+        if (currentSet) {
+          if (confirm(`セット「${currentSet.name || "無名セット"}」を削除しますか？`)) {
+            deleteSet(currentSetId);
+          }
+        }
+      },
+    },
+    {
+      id: "copy-set",
+      label: "セットコピー",
+      icon: "📋",
+      group: "set",
+      action: () => {
+        if (currentSet) {
+          copySet(currentSetId);
+        }
+      },
+    },
+    {
+      id: "set-previous",
+      label: "前のセットに切り替え",
+      shortcut: "Ctrl+[",
+      icon: "◀",
+      group: "set",
+      action: handleSetPrevious,
+    },
+    {
+      id: "set-next",
+      label: "次のセットに切り替え",
+      shortcut: "Ctrl+]",
+      icon: "▶",
+      group: "set",
+      action: handleSetNext,
+    },
+    // メンバー操作
+    {
+      id: "select-all",
+      label: "全選択",
+      shortcut: "Ctrl+A",
+      icon: "☑️",
+      group: "member",
+      action: () => {
+        const currentSet = sets.find((s) => s.id === currentSetId);
+        if (currentSet) {
+          const allIds = Object.keys(currentSet.positions);
+          handleSelectBulk(allIds);
+        }
+      },
+    },
+    {
+      id: "deselect-all",
+      label: "全選択解除",
+      shortcut: "Ctrl+D",
+      icon: "☐",
+      group: "member",
+      action: handleDeselectAll,
+    },
+    {
+      id: "copy",
+      label: "コピー",
+      shortcut: "Ctrl+C",
+      icon: "📋",
+      group: "member",
+      action: handleCopy,
+    },
+    {
+      id: "paste",
+      label: "貼り付け",
+      shortcut: "Ctrl+V",
+      icon: "📄",
+      group: "member",
+      action: handlePaste,
+    },
+    {
+      id: "delete",
+      label: "削除",
+      shortcut: "Delete",
+      icon: "🗑️",
+      group: "member",
+      action: handleDelete,
+    },
+    // 整列
+    {
+      id: "arrange-line",
+      label: "直線整列",
+      icon: "📐",
+      group: "arrange",
+      action: arrangeLineSelected,
+    },
+    {
+      id: "arrange-line-order",
+      label: "選択順で直線整列",
+      icon: "📏",
+      group: "arrange",
+      action: () => arrangeLineBySelectionOrder && arrangeLineBySelectionOrder(),
+    },
+    {
+      id: "arrange-circle",
+      label: "円形整列",
+      icon: "⭕",
+      group: "arrange",
+      action: () => {
+        if (selectedIds.length === 0) {
+          addGlobalNotification({
+            type: "warning",
+            message: "整列するメンバーを選択してください",
+          });
+          return;
+        }
+        setIsLayoutModalOpen(true);
+        // 円形整列モードを設定（モーダルで処理）
+      },
+    },
+    {
+      id: "arrange-rectangle",
+      label: "矩形整列",
+      icon: "▭",
+      group: "arrange",
+      action: () => {
+        if (selectedIds.length === 0) {
+          addGlobalNotification({
+            type: "warning",
+            message: "整列するメンバーを選択してください",
+          });
+          return;
+        }
+        setIsLayoutModalOpen(true);
+        // 矩形整列モードを設定（モーダルで処理）
+      },
+    },
+    {
+      id: "arrange-spiral",
+      label: "スパイラル整列",
+      icon: "🌀",
+      group: "arrange",
+      action: () => {
+        if (selectedIds.length === 0) {
+          addGlobalNotification({
+            type: "warning",
+            message: "整列するメンバーを選択してください",
+          });
+          return;
+        }
+        setIsLayoutModalOpen(true);
+        // スパイラル整列モードを設定（モーダルで処理）
+      },
+    },
+    {
+      id: "arrange-box",
+      label: "ボックス整列",
+      icon: "📦",
+      group: "arrange",
+      action: () => {
+        if (selectedIds.length === 0) {
+          addGlobalNotification({
+            type: "warning",
+            message: "整列するメンバーを選択してください",
+          });
+          return;
+        }
+        setIsLayoutModalOpen(true);
+        // ボックス整列モードを設定（モーダルで処理）
+      },
+    },
+    // 変形
+    {
+      id: "rotate",
+      label: "回転",
+      icon: "🔄",
+      group: "transform",
+      action: () => {
+        if (selectedIds.length < 2) {
+          addGlobalNotification({
+            type: "warning",
+            message: "回転するには2つ以上のメンバーを選択してください",
+          });
+          return;
+        }
+        // 回転モードを開始（実際の実装はFieldCanvasで処理）
+      },
+    },
+    {
+      id: "scale",
+      label: "拡大縮小",
+      icon: "🔍",
+      group: "transform",
+      action: () => {
+        if (selectedIds.length === 0) {
+          addGlobalNotification({
+            type: "warning",
+            message: "拡大縮小するメンバーを選択してください",
+          });
+          return;
+        }
+        // 拡大縮小モードを開始（実際の実装はFieldCanvasで処理）
+      },
+    },
+    // 再生
+    {
+      id: "play",
+      label: "再生",
+      icon: "▶️",
+      group: "playback",
+      action: handleStartPlay,
+    },
+    {
+      id: "stop",
+      label: "停止",
+      icon: "⏹️",
+      group: "playback",
+      action: () => {
+        setMusicSyncMode(false);
+        stopPlay();
+        if (musicState.isPlaying) {
+          stopMusic();
+        }
+      },
+    },
+    {
+      id: "clear-playback",
+      label: "再生表示をクリア",
+      icon: "🧹",
+      group: "playback",
+      action: clearPlaybackView,
+    },
+    // 表示
+    {
+      id: "3d-preview",
+      label: "3Dプレビュー",
+      icon: "🎥",
+      group: "view",
+      action: () => setIs3DPreviewOpen(true),
+    },
+    {
+      id: "toggle-grid",
+      label: "グリッド表示の切り替え",
+      icon: "⊞",
+      group: "view",
+      action: handleToggleGrid,
+    },
+    {
+      id: "zoom-in",
+      label: "ズームイン",
+      shortcut: "Ctrl++",
+      icon: "🔍",
+      group: "view",
+      action: handleZoomIn,
+    },
+    {
+      id: "zoom-out",
+      label: "ズームアウト",
+      shortcut: "Ctrl+-",
+      icon: "🔍",
+      group: "view",
+      action: handleZoomOut,
+    },
+    {
+      id: "zoom-reset",
+      label: "ズームリセット",
+      icon: "🎯",
+      group: "view",
+      action: handleZoomReset,
+    },
+    {
+      id: "toggle-statistics",
+      label: "統計パネルの表示切り替え",
+      icon: "📊",
+      group: "view",
+      action: () => updateSettings({ showStatistics: !settings.showStatistics }),
+    },
+    // 設定・ヘルプ
+    {
+      id: "grid-editor",
+      label: "グリッドエディタを開く",
+      icon: "⚙️",
+      group: "settings",
+      action: () => window.location.href = "/grid-editor",
+    },
+    {
+      id: "settings",
+      label: "設定を開く",
+      icon: "⚙️",
+      group: "settings",
+      action: () => window.location.href = "/settings",
+    },
+    {
+      id: "shortcut-help",
+      label: "ショートカットヘルプ",
+      shortcut: "Ctrl+?",
+      icon: "❓",
+      group: "help",
+      action: () => setShortcutHelpOpen(true),
+    },
+    {
+      id: "editor-help",
+      label: "エディタヘルプ",
+      icon: "📖",
+      group: "help",
+      action: () => setEditorHelpOpen(true),
+    },
   ];
 
   // ヘッダーメニュー用のグループ
@@ -1913,9 +2239,29 @@ export default function DrillPage() {
           >
             {/* ヘッダー */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/60 bg-slate-800/50">
-              <h2 className="text-lg font-semibold text-slate-200 uppercase tracking-wider">
-                3Dプレビュー
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold text-slate-200 uppercase tracking-wider">
+                  3Dプレビュー
+                </h2>
+                {/* 再生・停止ボタン */}
+                <button
+                  onClick={isPlaying ? handleStopPlay : handleStartPlay}
+                  disabled={isRecording3D}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors shadow-md ${
+                    isPlaying
+                      ? "bg-emerald-800/70 border border-emerald-500 text-emerald-50 hover:bg-emerald-900"
+                      : "bg-emerald-700/80 border border-emerald-400 text-emerald-50 hover:bg-emerald-600"
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  title={isPlaying ? "停止" : "再生"}
+                >
+                  {isPlaying ? "■" : "▶"}
+                </button>
+                {isPlaying && (
+                  <span className="text-xs text-slate-400">
+                    Count: {Math.round(currentCount)}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {isRecording3D ? (
                   <button
@@ -1967,9 +2313,9 @@ export default function DrillPage() {
         onClose={() => {
           setExportDialogOpen(false);
         }}
-        onConfirm={handleExportOptionsConfirm}
+        onConfirm={(options) => handleExportOptionsConfirm(options, drillDataName)}
         sets={sets}
-        allowSetSelection={pendingExportType === "pdf" || pendingExportType === "print"}
+        allowSetSelection={pendingExportType === "pdf" || pendingExportType === "print" || pendingExportType === "image"}
       />
       
       {/* メタデータ編集ダイアログ */}
@@ -1984,7 +2330,18 @@ export default function DrillPage() {
           saveDrillMetadata({ title, dataName });
         }}
       />
-      <div className="relative h-screen bg-slate-900 text-slate-100 flex flex-col overflow-hidden">
+      <FileDropZone
+        onImport={(data) => {
+          // ドリルデータをインポート
+          if (data.sets) {
+            restoreState(data.sets, [], data.sets[0]?.id || "");
+          }
+          if (data.settings) {
+            updateSettings(data.settings);
+          }
+        }}
+      >
+        <div className="relative h-screen bg-slate-900 text-slate-100 flex flex-col overflow-hidden">
         {/* メインコンテンツエリア（flex、高さ固定） */}
         <div className="flex-1 flex gap-3 overflow-hidden px-3 py-3 max-md:px-1 max-md:py-1">
           {/* 左サイドバー（コマンド系） */}
@@ -1996,6 +2353,9 @@ export default function DrillPage() {
                   id: s.id,
                   name: s.name,
                   startCount: s.startCount,
+                  note: s.note,
+                  instructions: s.instructions,
+                  nextMove: s.nextMove,
                 }))}
                 currentSetId={currentSetId}
                 onChangeCurrentSet={(id) => {
@@ -2018,8 +2378,86 @@ export default function DrillPage() {
                   setCurrentSetId(id);
                   handleSelectBulk([]);
                 }}
-                onAddSet={addSetTail}
-                onDeleteSet={deleteSet}
+                onAddSet={undefined}
+                onQuickDelete={handleDelete}
+                onQuickCopy={handleCopy}
+                onQuickArrangeLine={arrangeLineSelected}
+                onQuickDeselectAll={handleDeselectAll}
+                hasSelection={selectedIds.length > 0}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                onUndo={undo}
+                onRedo={redo}
+                onDeleteSet={(id: string) => {
+                  if (sets.length <= 1) {
+                    alert("最後のセットは削除できません");
+                    return;
+                  }
+                  
+                  const setToDelete = sets.find((s) => s.id === id);
+                  if (!setToDelete) return;
+                  
+                  const filtered = sets.filter((s) => s.id !== id);
+                  const renumbered = filtered.map((s, idx) => ({ ...s, name: `Set ${idx + 1}` }));
+                  
+                  // 削除されたセットが現在のセットの場合、最初のセットに切り替え
+                  const newCurrentSetId = id === currentSetId && renumbered.length > 0
+                    ? renumbered[0].id
+                    : currentSetId;
+                  
+                  // 削除されたSETに関連する確定カウントを削除
+                  // 削除されたSETのstartCountとpositionsByCountに含まれるカウントを、
+                  // 他のSETからも削除する（該当するカウントがそのSETにのみ存在する場合）
+                  const deletedSetStartCount = Math.round(setToDelete.startCount);
+                  const deletedSetCounts = new Set<number>();
+                  deletedSetCounts.add(deletedSetStartCount);
+                  
+                  if (setToDelete.positionsByCount) {
+                    Object.keys(setToDelete.positionsByCount).forEach(countStr => {
+                      deletedSetCounts.add(Number(countStr));
+                    });
+                  }
+                  
+                  // 削除されたカウントが他のSETにも存在するかチェック
+                  // 他のSETに存在しないカウントのみを削除対象とする
+                  const countsToRemove = Array.from(deletedSetCounts).filter(count => {
+                    // 他のSETに同じカウントが存在するかチェック
+                    return !renumbered.some(set => {
+                      const setStartCount = Math.round(set.startCount);
+                      if (setStartCount === count) return true;
+                      if (set.positionsByCount && set.positionsByCount[count]) return true;
+                      return false;
+                    });
+                  });
+                  
+                  // 削除対象のカウントを他のSETからも削除
+                  const cleanedSets = renumbered.map(set => {
+                    if (!set.positionsByCount) return set;
+                    
+                    const cleanedPositionsByCount = { ...set.positionsByCount };
+                    let hasChanges = false;
+                    
+                    countsToRemove.forEach(count => {
+                      if (cleanedPositionsByCount[count]) {
+                        delete cleanedPositionsByCount[count];
+                        hasChanges = true;
+                      }
+                    });
+                    
+                    if (hasChanges) {
+                      return {
+                        ...set,
+                        positionsByCount: Object.keys(cleanedPositionsByCount).length > 0
+                          ? cleanedPositionsByCount
+                          : undefined,
+                      };
+                    }
+                    
+                    return set;
+                  });
+                  
+                  restoreState(cleanedSets, [], newCurrentSetId);
+                }}
                 onReorderSet={reorderSet}
                 onChangeSetName={handleChangeSetName}
                 onCopySet={copySet}
@@ -2044,14 +2482,12 @@ export default function DrillPage() {
                 confirmedCounts={confirmedCounts}
                 currentCount={hasPlayback ? undefined : currentCount}
                 onJumpToCount={handleJumpToCountSafe}
-                currentNote={currentSet.note}
-                currentInstructions={currentSet.instructions}
-                currentNextMove={currentSet.nextMove}
                 onChangeNote={handleChangeNote}
                 onChangeInstructions={handleChangeInstructions}
                 onChangeNextMove={handleChangeNextMove}
               />
             </div>
+
           </div>
 
           {/* 中央（フィールド） */}
@@ -2100,6 +2536,9 @@ export default function DrillPage() {
                 members={members as any}
                 selectedIds={selectedIds}
                 currentSetPositions={displayPositions}
+                sets={sets}
+                onFilterMembers={setFilteredMemberIds}
+                onFilterSets={setFilteredSetIds}
                 onAddMember={() => {
                   const newIndex = members.length + 1;
                   const newId = `M${newIndex}`;
@@ -2402,6 +2841,7 @@ export default function DrillPage() {
                 index < sets.length - 1
                   ? sets[index + 1].startCount
                   : s.startCount, // 最後のSETを「点」として扱う
+              hasInstructions: Boolean(s.instructions?.trim()), // 指示・動き方が入力されているか
             }))}
             playStartId={playStartId}
             playEndId={playEndId}
@@ -2448,6 +2888,17 @@ export default function DrillPage() {
           />
         </div>
       </div>
+
+      {/* 保存状態インジケーター */}
+      <SaveStatusIndicator
+        sets={sets}
+        members={members}
+        drillTitle={drillTitle}
+        drillDataName={drillDataName}
+        drillDbId={drillDbId}
+        onSaveToDatabase={saveDrillToDatabase}
+      />
+      </FileDropZone>
     </>
   );
 }

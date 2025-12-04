@@ -9,7 +9,7 @@ export type Command = {
   label: string;
   shortcut?: string;
   icon?: string;
-  group: "file" | "edit" | "export" | "import" | "view";
+  group: "file" | "edit" | "set" | "member" | "arrange" | "transform" | "playback" | "view" | "export" | "import" | "settings" | "help";
   action: () => void;
 };
 
@@ -27,6 +27,8 @@ export default function CommandPalette({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const selectedItemRef = useRef<HTMLButtonElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // フィルタリングされたコマンド
   const filteredCommands = commands.filter((cmd) =>
@@ -47,9 +49,16 @@ export default function CommandPalette({
   const groupLabels: Record<string, string> = {
     file: t("menu.file"),
     edit: t("menu.edit"),
+    set: "セット操作",
+    member: "メンバー操作",
+    arrange: "整列",
+    transform: "変形",
+    playback: "再生",
+    view: t("menu.view"),
     export: t("menu.file.export"),
     import: t("menu.file.import"),
-    view: t("menu.view"),
+    settings: "設定",
+    help: "ヘルプ",
   };
 
   useEffect(() => {
@@ -88,6 +97,22 @@ export default function CommandPalette({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, filteredCommands, selectedIndex, onClose]);
+
+  // 選択された項目をスクロール表示
+  useEffect(() => {
+    if (selectedItemRef.current && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const item = selectedItemRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const itemRect = item.getBoundingClientRect();
+      
+      if (itemRect.top < containerRect.top) {
+        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } else if (itemRect.bottom > containerRect.bottom) {
+        item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+  }, [selectedIndex, filteredCommands]);
 
   if (!isOpen) return null;
 
@@ -135,49 +160,52 @@ export default function CommandPalette({
         </div>
 
         {/* コマンドリスト */}
-        <div className="max-h-96 overflow-y-auto">
-          {filteredCommands.length === 0 ? (
-            <div className="p-8 text-center text-slate-400">
-              {t("commandPalette.noResults")}
-            </div>
-          ) : (
-            Object.entries(groupedCommands).map(([group, cmds]) => (
-              <div key={group} className="py-2">
-                <div className="px-4 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  {groupLabels[group] || group}
-                </div>
-                {cmds.map((cmd, idx) => {
-                  const globalIndex = filteredCommands.indexOf(cmd);
-                  const isSelected = globalIndex === selectedIndex;
-                  return (
-                    <button
-                      key={cmd.id}
-                      onClick={() => {
-                        cmd.action();
-                        onClose();
-                      }}
-                      className={`w-full px-4 py-2.5 text-left flex items-center justify-between hover:bg-slate-700/50 transition-colors rounded mx-1 ${
-                        isSelected ? "bg-slate-700/50" : ""
-                      }`}
-                      onMouseEnter={() => setSelectedIndex(globalIndex)}
-                    >
-                      <div className="flex items-center gap-3">
-                        {cmd.icon && (
-                          <span className="text-slate-400">{cmd.icon}</span>
-                        )}
-                        <span className="text-slate-100">{cmd.label}</span>
-                      </div>
-                      {cmd.shortcut && (
-                        <kbd className="px-2 py-1 text-xs font-semibold text-slate-400 bg-slate-900 border border-slate-700 rounded">
-                          {cmd.shortcut}
-                        </kbd>
-                      )}
-                    </button>
-                  );
-                })}
+        <div ref={scrollContainerRef} className="max-h-[60vh] overflow-y-auto sidebar-scrollbar">
+          <div className="pb-4">
+            {filteredCommands.length === 0 ? (
+              <div className="p-8 text-center text-slate-400">
+                {t("commandPalette.noResults")}
               </div>
-            ))
-          )}
+            ) : (
+              Object.entries(groupedCommands).map(([group, cmds]) => (
+                <div key={group} className="py-2">
+                  <div className="px-4 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-800/95 backdrop-blur z-10">
+                    {groupLabels[group] || group}
+                  </div>
+                  {cmds.map((cmd, idx) => {
+                    const globalIndex = filteredCommands.indexOf(cmd);
+                    const isSelected = globalIndex === selectedIndex;
+                    return (
+                      <button
+                        key={cmd.id}
+                        ref={isSelected ? selectedItemRef : undefined}
+                        onClick={() => {
+                          cmd.action();
+                          onClose();
+                        }}
+                        className={`w-full px-4 py-2.5 text-left flex items-center justify-between hover:bg-slate-700/50 transition-colors rounded mx-1 ${
+                          isSelected ? "bg-slate-700/50" : ""
+                        }`}
+                        onMouseEnter={() => setSelectedIndex(globalIndex)}
+                      >
+                        <div className="flex items-center gap-3">
+                          {cmd.icon && (
+                            <span className="text-slate-400">{cmd.icon}</span>
+                          )}
+                          <span className="text-slate-100">{cmd.label}</span>
+                        </div>
+                        {cmd.shortcut && (
+                          <kbd className="px-2 py-1 text-xs font-semibold text-slate-400 bg-slate-900 border border-slate-700 rounded">
+                            {cmd.shortcut}
+                          </kbd>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         {/* フッター */}

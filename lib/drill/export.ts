@@ -68,7 +68,8 @@ export async function exportSetsToPDF(
     includeNote: true,
     includeInstructions: true,
     includeField: true,
-  }
+  },
+  drillDataName?: string
 ): Promise<void> {
   try {
     const pdf = new jsPDF({
@@ -232,9 +233,21 @@ export async function exportSetsToPDF(
     }
 
     // PDFをダウンロード
-    const filename = pdfOptions.includeAllSets
-      ? `drill-all-sets-${new Date().toISOString().split("T")[0]}.pdf`
-      : `drill-${currentSetId}-${new Date().toISOString().split("T")[0]}.pdf`;
+    // 日時を生成（YYYYMMDDHHmm形式）
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    const timestamp = `${year}${month}${day}${hours}${minutes}`;
+
+    // ファイル名のベース部分（drillDataNameがあれば使用、なければ"drill"）
+    const baseName = drillDataName && drillDataName.trim() ? drillDataName.trim() : "drill";
+
+    const filename = pdfOptions.includeAllSets || (pdfOptions.selectedSetIds && pdfOptions.selectedSetIds.length > 1)
+      ? `${baseName}_${timestamp}.pdf`
+      : `${baseName}_${timestamp}.pdf`;
 
     pdf.save(filename);
   } catch (error) {

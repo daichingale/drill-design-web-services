@@ -47,9 +47,9 @@ type UseDrillSetsResult = {
   // ★ WorldPos を直接受け取る
   handleMove: (id: string, pos: WorldPos) => void;
 
-  handleChangeNote: (value: string) => void;
-  handleChangeInstructions: (value: string) => void;
-  handleChangeNextMove: (value: string) => void;
+  handleChangeNote: (setId: string, value: string) => void;
+  handleChangeInstructions: (setId: string, value: string) => void;
+  handleChangeNextMove: (setId: string, value: string) => void;
   handleChangeSetStartCount: (id: string, value: number) => void;
   handleChangeSetName: (id: string, name: string) => void; // セット名編集
   copySet: (sourceSetId: string, targetSetId?: string) => void; // セット全体をコピー
@@ -486,27 +486,27 @@ const handleSelectBulk = (ids: string[]) => {
 
 
   // Note 編集
-  const handleChangeNote = (value: string) => {
+  const handleChangeNote = (setId: string, value: string) => {
     setSets((prev) =>
       prev.map((set) =>
-        set.id === currentSetId ? { ...set, note: value } : set
+        set.id === setId ? { ...set, note: value } : set
       )
     );
   };
 
   // Instructions 編集
-  const handleChangeInstructions = (value: string) => {
+  const handleChangeInstructions = (setId: string, value: string) => {
     setSets((prev) =>
       prev.map((set) =>
-        set.id === currentSetId ? { ...set, instructions: value } : set
+        set.id === setId ? { ...set, instructions: value } : set
       )
     );
   };
 
-  const handleChangeNextMove = (value: string) => {
+  const handleChangeNextMove = (setId: string, value: string) => {
     setSets((prev) =>
       prev.map((set) =>
-        set.id === currentSetId ? { ...set, nextMove: value } : set
+        set.id === setId ? { ...set, nextMove: value } : set
       )
     );
   };

@@ -282,38 +282,138 @@ export function useDrillExport({
 
   // 画像エクスポート（オプション選択後）
   const handleExportImageWithOptions = useCallback(
-    async (format: "png" | "jpeg", options: ExportOptions) => {
+    async (format: "png" | "jpeg", options: ExportOptions, drillDataName?: string) => {
       if (!canvasRef.current) {
         alert("キャンバスが読み込まれていません");
         return;
       }
 
       try {
-        const fieldBlob = await canvasRef.current.exportImage(format, 2);
-        if (!fieldBlob) {
-          alert("フィールド画像の取得に失敗しました");
+        // 日時を生成（YYYYMMDDHHmm形式）
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const day = String(now.getDate()).padStart(2, "0");
+        const hours = String(now.getHours()).padStart(2, "0");
+        const minutes = String(now.getMinutes()).padStart(2, "0");
+        const timestamp = `${year}${month}${day}${hours}${minutes}`;
+
+        // ファイル名のベース部分（drillDataNameがあれば使用、なければ"drill"）
+        const baseName = drillDataName && drillDataName.trim() ? drillDataName.trim() : "drill";
+
+        // 選択されたSETがある場合は複数エクスポート
+        const setsToExport = options.selectedSetIds && options.selectedSetIds.length > 0
+          ? sets.filter(s => options.selectedSetIds!.includes(s.id))
+          : [currentSet];
+
+        if (setsToExport.length === 0) {
+          alert("エクスポートするSETが選択されていません");
           return;
         }
 
-        const finalBlob = await exportSetWithInfo(
-          fieldBlob,
-          currentSet,
-          options,
-          format
-        );
+        // 複数SETの場合はZIPにまとめる
+        if (setsToExport.length > 1) {
+          const JSZip = (await import("jszip")).default;
+          const zip = new JSZip();
 
-        if (finalBlob) {
-          const filename = `drill-${currentSet.name || currentSetId}-${new Date().toISOString().split("T")[0]}.${format}`;
-          downloadImage(finalBlob, filename);
+          const originalSetId = currentSetId;
+          
+          // 各SETの画像を生成
+          for (const set of setsToExport) {
+            // SETを一時的に切り替えて画像を取得
+            if (setCurrentSetId && set.id !== currentSetId) {
+              setCurrentSetId(set.id);
+              // SET切り替え後の描画を待つ
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+
+            if (!canvasRef.current) {
+              console.warn(`Set ${set.id} のキャンバスが読み込まれていません`);
+              continue;
+            }
+
+            const fieldBlob = await canvasRef.current.exportImage(format, 2);
+            if (!fieldBlob) {
+              console.warn(`Set ${set.id} のフィールド画像の取得に失敗しました`);
+              continue;
+            }
+
+            const finalBlob = await exportSetWithInfo(
+              fieldBlob,
+              set,
+              options,
+              format
+            );
+
+            if (finalBlob) {
+              // ファイル名: {baseName}_{setName}_{timestamp}.{format}
+              const setName = set.name || `Set_${Math.round(set.startCount)}`;
+              const sanitizedName = setName.replace(/[^a-zA-Z0-9_-]/g, "_");
+              const filename = `${baseName}_${sanitizedName}_${timestamp}.${format}`;
+              zip.file(filename, finalBlob);
+            }
+          }
+
+          // 元のSETに戻す
+          if (setCurrentSetId && originalSetId !== currentSetId) {
+            setCurrentSetId(originalSetId);
+          }
+
+          // ZIPファイルを生成してダウンロード
+          const zipBlob = await zip.generateAsync({ type: "blob" });
+          const zipFilename = `${baseName}_${timestamp}.zip`;
+          const url = URL.createObjectURL(zipBlob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = zipFilename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          addGlobalNotification({
+            type: "success",
+            message: `${setsToExport.length}個のSETをZIPファイルにエクスポートしました`,
+          });
         } else {
-          alert("画像のエクスポートに失敗しました");
+          // 単一SETの場合は従来通り
+          const set = setsToExport[0];
+          
+          // SETを一時的に切り替えて画像を取得（必要に応じて）
+          if (setCurrentSetId && set.id !== currentSetId) {
+            setCurrentSetId(set.id);
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+
+          const fieldBlob = await canvasRef.current.exportImage(format, 2);
+          if (!fieldBlob) {
+            alert("フィールド画像の取得に失敗しました");
+            return;
+          }
+
+          const finalBlob = await exportSetWithInfo(
+            fieldBlob,
+            set,
+            options,
+            format
+          );
+
+          if (finalBlob) {
+            // ファイル名: {baseName}_{setName}_{timestamp}.{format}
+            const setName = set.name || `Set_${Math.round(set.startCount)}`;
+            const sanitizedName = setName.replace(/[^a-zA-Z0-9_-]/g, "_");
+            const filename = `${baseName}_${sanitizedName}_${timestamp}.${format}`;
+            downloadImage(finalBlob, filename);
+          } else {
+            alert("画像のエクスポートに失敗しました");
+          }
         }
       } catch (error) {
         console.error("Export error:", error);
         alert("画像のエクスポートに失敗しました");
       }
     },
-    [canvasRef, currentSet, currentSetId]
+    [canvasRef, currentSet, currentSetId, sets, setCurrentSetId]
   );
 
   // 画像エクスポート（ダイアログを開く）
@@ -331,7 +431,7 @@ export function useDrillExport({
 
   // PDFエクスポート（オプション選択後）
   const handleExportPDFWithOptions = useCallback(
-    async (options: ExportOptions, includeAllSets: boolean = false) => {
+    async (options: ExportOptions, includeAllSets: boolean = false, drillDataName?: string) => {
       if (!canvasRef.current) {
         alert("キャンバスが読み込まれていません");
         return;
@@ -381,7 +481,8 @@ export function useDrillExport({
             includeNote: options.includeNote,
             includeInstructions: options.includeInstructions,
             includeField: options.includeField,
-          }
+          },
+          drillDataName
         );
 
         // 元のSetに戻す
@@ -487,11 +588,11 @@ export function useDrillExport({
 
   // エクスポートオプション確定時の処理
   const handleExportOptionsConfirm = useCallback(
-    (options: ExportOptions) => {
+    (options: ExportOptions, drillDataName?: string) => {
       if (pendingExportType === "image") {
-        handleExportImageWithOptions(pendingImageFormat, options);
+        handleExportImageWithOptions(pendingImageFormat, options, drillDataName);
       } else if (pendingExportType === "pdf") {
-        handleExportPDFWithOptions(options, false);
+        handleExportPDFWithOptions(options, false, drillDataName);
       } else if (pendingExportType === "print") {
         handlePrintWithOptions(options);
       }
