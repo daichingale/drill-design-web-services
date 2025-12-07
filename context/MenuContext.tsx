@@ -14,6 +14,7 @@ export type MenuItem = {
 
 export type MenuGroup = {
   label: string;
+  icon?: string; // メニューグループのアイコン（オプショナル）
   items: MenuItem[];
 };
 

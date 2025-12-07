@@ -1,13 +1,16 @@
 // components/drill/FieldCanvas.tsx
 "use client";
 
-import { useRef, useState, forwardRef, useImperativeHandle, useMemo } from "react";
+import { useRef, useState, forwardRef, useImperativeHandle, useMemo, memo } from "react";
 import { Stage, Layer, Line, Circle, Text, Rect, Group, Shape } from "react-konva";
 import Konva from "konva";
 
 import type { WorldPos, Member, ArcBinding } from "../../lib/drill/types";
+import type { UiSet } from "../../lib/drill/uiTypes";
 import { STEP_M } from "../../lib/drill/utils";
 import { useSettings } from "@/context/SettingsContext";
+import { calculateDistance } from "../../lib/drill/math";
+import FieldGrid from "./FieldGrid";
 
 type Props = {
   members: Member[];
@@ -27,6 +30,7 @@ type Props = {
   individualPlacementMode?: boolean; // 個別配置モード
   onPlaceMember?: (id: string, pos: WorldPos) => void; // 個別配置コールバック
   placementQueue?: string[]; // 配置待ちのメンバーIDリスト
+  onDropMemberToField?: (memberIds: string[], position: WorldPos) => void; // ドロップ配置コールバック
   // 横一列レイアウト編集用（未確定ラインの両端ハンドル）
   lineEditState?: {
     memberIds: string[];
@@ -50,6 +54,13 @@ type Props = {
     br: WorldPos;
     bl: WorldPos;
   }) => void;
+  // パス可視化
+  sets?: UiSet[]; // セット情報（パス計算用）
+  showPaths?: boolean;
+  showCollisions?: boolean;
+  pathSmoothing?: boolean;
+  onAddIntermediatePoint?: (memberId: string, count: number, position: WorldPos) => void;
+  onRemoveIntermediatePoint?: (memberId: string, count: number) => void;
 };
 
 // ===== キャンバス設定 =====
@@ -83,10 +94,17 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
     individualPlacementMode = false,
     onPlaceMember,
     placementQueue = [],
+    onDropMemberToField,
     lineEditState = null,
     onUpdateLineEdit,
     boxEditState = null,
     onUpdateBoxEdit,
+    sets = [],
+    showPaths = false,
+    showCollisions = false,
+    pathSmoothing = false,
+    onAddIntermediatePoint,
+    onRemoveIntermediatePoint,
   } = props;
   
   // 設定を取得
@@ -142,6 +160,11 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
   );
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null);
   const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null);
+  
+  // タッチ操作用の状態
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTouchDistanceRef = useRef<number | null>(null);
+  const isPinchingRef = useRef(false);
 
   // ref経由でエクスポート機能を公開
   useImperativeHandle(ref, () => ({
@@ -193,15 +216,7 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
         }
       : null;
 
-  // グリッド用
-  const totalStepsX = useMemo(
-    () => Math.round(fieldWidth / STEP_M),
-    [fieldWidth]
-  );
-  const totalStepsY = useMemo(
-    () => Math.round(fieldHeight / STEP_M),
-    [fieldHeight]
-  );
+  // スケール計算（グリッド以外の描画でも使用）
   const stepPxX = useMemo(() => STEP_M * baseScaleX, [baseScaleX]);
   const stepPxY = useMemo(() => STEP_M * baseScaleY, [baseScaleY]);
 
@@ -217,6 +232,30 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
           transformOrigin: 'center center',
           width: CANVAS_WIDTH_PX,
           height: CANVAS_HEIGHT_PX,
+        }}
+        onDragOver={(e) => {
+          if (onDropMemberToField) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (!onDropMemberToField) return;
+          
+          const memberData = e.dataTransfer.getData("text/plain");
+          if (!memberData) return;
+          
+          // 複数のメンバーIDがカンマ区切りで渡される場合に対応
+          const memberIds = memberData.split(",").map(id => id.trim()).filter(id => id);
+          
+          const rect = e.currentTarget.getBoundingClientRect();
+          const canvasX = (e.clientX - rect.left) / scale;
+          const canvasY = (e.clientY - rect.top) / scale;
+          const worldPos = canvasToWorld(canvasX, canvasY);
+          const snappedPos = clampAndSnap(worldPos);
+          
+          onDropMemberToField(memberIds, snappedPos);
         }}
       >
         <Stage
@@ -329,6 +368,126 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
       onMouseLeave={() => {
         selectionStartRef.current = null;
         setSelectionRect(null);
+      }}
+      // ===== タッチ操作のサポート =====
+      onTouchStart={(e: any) => {
+        // ピンチズームの検出
+        const touches = e.evt.touches;
+        if (touches.length === 2) {
+          isPinchingRef.current = true;
+          const touch1 = touches[0];
+          const touch2 = touches[1];
+          const distance = Math.hypot(
+            touch2.clientX - touch1.clientX,
+            touch2.clientY - touch1.clientY
+          );
+          lastTouchDistanceRef.current = distance;
+          return;
+        }
+        
+        // 単一タッチの場合はマウスイベントと同じ処理
+        if (isPlaying || activeArc || individualPlacementMode) return;
+        
+        const stage = e.target.getStage();
+        if (!stage) return;
+        
+        const pointer = stage.getPointerPosition();
+        if (!pointer) return;
+        
+        const sx = stage.scaleX() || 1;
+        const sy = stage.scaleY() || 1;
+        
+        const x = pointer.x / sx;
+        const y = pointer.y / sy;
+        
+        touchStartRef.current = { x, y };
+        selectionStartRef.current = { x, y };
+        setSelectionRect({ x, y, w: 0, h: 0 });
+      }}
+      onTouchMove={(e: any) => {
+        const touches = e.evt.touches;
+        
+        // ピンチズームの処理
+        if (touches.length === 2 && isPinchingRef.current) {
+          e.evt.preventDefault();
+          const touch1 = touches[0];
+          const touch2 = touches[1];
+          const distance = Math.hypot(
+            touch2.clientX - touch1.clientX,
+            touch2.clientY - touch1.clientY
+          );
+          
+          if (lastTouchDistanceRef.current !== null) {
+            const scaleChange = distance / lastTouchDistanceRef.current;
+            // ズーム処理は親コンポーネントで行うため、ここではイベントを発火するだけ
+            // 実際のズーム処理はuseCanvasZoomフックで行う
+          }
+          
+          lastTouchDistanceRef.current = distance;
+          return;
+        }
+        
+        // 単一タッチの場合はマウスイベントと同じ処理
+        if (!selectionStartRef.current || !selectionRect || isPinchingRef.current) return;
+        
+        const stage = e.target.getStage();
+        if (!stage) return;
+        const pointer = stage.getPointerPosition();
+        if (!pointer) return;
+        
+        const sx = stage.scaleX() || 1;
+        const sy = stage.scaleY() || 1;
+        
+        const x = pointer.x / sx;
+        const y = pointer.y / sy;
+        
+        const start = selectionStartRef.current;
+        const rectX = Math.min(start.x, x);
+        const rectY = Math.min(start.y, y);
+        const rectW = Math.abs(x - start.x);
+        const rectH = Math.abs(y - start.y);
+        
+        setSelectionRect({ x: rectX, y: rectY, w: rectW, h: rectH });
+      }}
+      onTouchEnd={(e: any) => {
+        // ピンチズームの終了
+        if (isPinchingRef.current) {
+          isPinchingRef.current = false;
+          lastTouchDistanceRef.current = null;
+          return;
+        }
+        
+        // 単一タッチの場合はマウスイベントと同じ処理
+        if (!selectionStartRef.current || !selectionRect) {
+          selectionStartRef.current = null;
+          setSelectionRect(null);
+          touchStartRef.current = null;
+          return;
+        }
+        
+        const rect = selectionRect;
+        selectionStartRef.current = null;
+        setSelectionRect(null);
+        touchStartRef.current = null;
+        
+        if (!onRectSelect) return;
+        
+        const selected: string[] = [];
+        members.forEach((m) => {
+          const pos = displayPositions[m.id];
+          if (!pos) return;
+          const c = worldToCanvas(pos);
+          if (
+            c.x >= rect.x &&
+            c.x <= rect.x + rect.w &&
+            c.y >= rect.y &&
+            c.y <= rect.y + rect.h
+          ) {
+            selected.push(m.id);
+          }
+        });
+        
+        onRectSelect(selected);
       }}
     >
       <Layer>
@@ -976,61 +1135,17 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
           );
         })()}
 
-        {/* グリッド（縦線） - グリッドは一番前に配置 */}
-        {showGrid &&
-          (() => {
-            const lines = [];
-            // フィールド全体をカバーするように、0からCANVAS_WIDTH_PXまでグリッド線を描画
-            const maxX = CANVAS_WIDTH_PX;
-            for (let x = 0; x <= maxX; x += stepPxX * gridInterval) {
-              const stepIndex = Math.round(x / stepPxX);
-              const isBold = stepIndex % 8 === 0;
-              // 中央の線（x軸）は後で別途描画するのでスキップ
-              const centerX = CANVAS_WIDTH_PX / 2;
-              const isCenterLine = Math.abs(x - centerX) < stepPxX / 2; // 中央の線はスキップ
-
-              if (isCenterLine) continue;
-
-              lines.push(
-                <Line
-                  key={`v-${stepIndex}`}
-                  points={[x, 0, x, CANVAS_HEIGHT_PX]}
-                  stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
-                  strokeWidth={isBold ? 2 : 0.5}
-                  listening={false}
-                />
-              );
-            }
-            return lines;
-          })()}
-
-        {/* グリッド（横線） - グリッドは一番前に配置 */}
-        {showGrid &&
-          (() => {
-            const lines = [];
-            // フィールド全体をカバーするように、0からCANVAS_HEIGHT_PXまでグリッド線を描画
-            const maxY = CANVAS_HEIGHT_PX;
-            for (let y = 0; y <= maxY; y += stepPxY * gridInterval) {
-              const stepIndex = Math.round(y / stepPxY);
-              const isBold = stepIndex % 8 === 0;
-              // 中央の線（y軸）は後で別途描画するのでスキップ
-              const centerY = CANVAS_HEIGHT_PX / 2;
-              const isCenterLine = Math.abs(y - centerY) < stepPxY / 2; // 中央の線はスキップ
-
-              if (isCenterLine) continue;
-
-              lines.push(
-                <Line
-                  key={`h-${stepIndex}`}
-                  points={[0, y, CANVAS_WIDTH_PX, y]}
-                  stroke={isBold ? "#64748b" : "rgba(100,116,139,0.3)"}
-                  strokeWidth={isBold ? 2 : 0.5}
-                  listening={false}
-                />
-              );
-            }
-            return lines;
-          })()}
+        {/* グリッド描画（分離コンポーネント） */}
+        <FieldGrid
+          canvasWidth={CANVAS_WIDTH_PX}
+          canvasHeight={CANVAS_HEIGHT_PX}
+          fieldWidth={fieldWidth}
+          fieldHeight={fieldHeight}
+          showGrid={showGrid}
+          gridInterval={gridInterval}
+          baseScaleX={baseScaleX}
+          baseScaleY={baseScaleY}
+        />
 
         {/* カスタム太線 */}
         {boldLines.map((line) => {
@@ -1102,6 +1217,133 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
           }
           return null;
         })}
+
+        {/* パス可視化（選択メンバーの移動経路） */}
+        {showPaths && sets.length > 0 && selectedIds.length > 0 && (() => {
+          const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+          const pathLines: JSX.Element[] = [];
+
+          selectedIds.forEach((memberId) => {
+            const pathPoints: Array<{ count: number; position: WorldPos }> = [];
+            
+            // 各セットでの位置を収集
+            sortedSets.forEach((set) => {
+              const pos = set.positions[memberId];
+              if (pos) {
+                pathPoints.push({ count: set.startCount, position: pos });
+              }
+              
+              // positionsByCountからも中間点を追加
+              if (set.positionsByCount) {
+                Object.entries(set.positionsByCount).forEach(([countStr, memberPositions]) => {
+                  const count = Number(countStr);
+                  const memberPos = memberPositions[memberId];
+                  if (memberPos && count !== set.startCount) {
+                    pathPoints.push({ count, position: memberPos });
+                  }
+                });
+              }
+            });
+
+            // カウント順にソート
+            pathPoints.sort((a, b) => a.count - b.count);
+
+            // パスを線で描画
+            for (let i = 0; i < pathPoints.length - 1; i++) {
+              const p1 = pathPoints[i];
+              const p2 = pathPoints[i + 1];
+              const c1 = worldToCanvas(p1.position);
+              const c2 = worldToCanvas(p2.position);
+              
+              pathLines.push(
+                <Line
+                  key={`path-${memberId}-${i}`}
+                  points={[c1.x, c1.y, c2.x, c2.y]}
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  opacity={0.6}
+                  dash={pathSmoothing ? undefined : [5, 5]}
+                  listening={false}
+                />
+              );
+            }
+
+            // パス上の点を描画
+            pathPoints.forEach((point, idx) => {
+              const c = worldToCanvas(point.position);
+              pathLines.push(
+                <Circle
+                  key={`path-point-${memberId}-${idx}`}
+                  x={c.x}
+                  y={c.y}
+                  radius={3}
+                  fill={point.count === sortedSets.find(s => s.positions[memberId] === point.position)?.startCount ? "#3b82f6" : "#60a5fa"}
+                  stroke="#1e40af"
+                  strokeWidth={1}
+                  listening={false}
+                />
+              );
+            });
+          });
+
+          return pathLines;
+        })()}
+
+        {/* 衝突検知の可視化 */}
+        {showCollisions && sets.length > 0 && selectedIds.length > 1 && (() => {
+          const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+          const collisionMarkers: JSX.Element[] = [];
+          const SAFE_DISTANCE = 1.25; // 2ステップ = 1.25m
+
+          sortedSets.forEach((set) => {
+            const selectedPositions: Array<{ memberId: string; position: WorldPos }> = [];
+            
+            selectedIds.forEach((memberId) => {
+              const pos = set.positions[memberId];
+              if (pos) {
+                selectedPositions.push({ memberId, position: pos });
+              }
+            });
+
+            for (let i = 0; i < selectedPositions.length; i++) {
+              for (let j = i + 1; j < selectedPositions.length; j++) {
+                const pos1 = selectedPositions[i].position;
+                const pos2 = selectedPositions[j].position;
+                const distance = calculateDistance(pos1, pos2);
+                
+                if (distance < SAFE_DISTANCE) {
+                  const c1 = worldToCanvas(pos1);
+                  const c2 = worldToCanvas(pos2);
+                  const midX = (c1.x + c2.x) / 2;
+                  const midY = (c1.y + c2.y) / 2;
+                  
+                  collisionMarkers.push(
+                    <Group key={`collision-${set.id}-${selectedPositions[i].memberId}-${selectedPositions[j].memberId}`}>
+                      <Line
+                        points={[c1.x, c1.y, c2.x, c2.y]}
+                        stroke="#ef4444"
+                        strokeWidth={2}
+                        opacity={0.8}
+                        dash={[5, 5]}
+                        listening={false}
+                      />
+                      <Circle
+                        x={midX}
+                        y={midY}
+                        radius={5}
+                        fill="#ef4444"
+                        opacity={0.8}
+                        listening={false}
+                      />
+                    </Group>
+                  );
+                }
+              }
+            }
+          });
+
+          return collisionMarkers;
+        })()}
       </Layer>
     </Stage>
       </div>

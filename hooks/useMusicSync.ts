@@ -9,6 +9,15 @@ export type MusicSyncMarker = {
   count: number; // 対応するカウント
 };
 
+export type MusicTrack = {
+  id: string;
+  name: string;
+  file: File | null;
+  audioElement: HTMLAudioElement | null;
+  volume: number; // 0-1
+  enabled: boolean;
+};
+
 export type MusicSyncState = {
   isLoaded: boolean;
   isPlaying: boolean;
@@ -16,8 +25,11 @@ export type MusicSyncState = {
   duration: number; // 音楽の長さ（秒）
   markers: MusicSyncMarker[];
   bpm: number | null; // BPM（自動検出または手動設定）
+  playbackRate: number; // 再生速度（0.5-2.0）
   fileName?: string | null; // 読み込んだ音楽ファイル名
   audioStream?: MediaStream | null; // 録画用にミックスされたオーディオストリーム
+  tracks: MusicTrack[]; // 複数トラック対応
+  autoSyncEnabled: boolean; // 自動シンク機能
 };
 
 export function useMusicSync() {
@@ -28,8 +40,11 @@ export function useMusicSync() {
     duration: 0,
     markers: [],
     bpm: null,
+    playbackRate: 1.0,
     fileName: null,
     audioStream: null,
+    tracks: [],
+    autoSyncEnabled: false,
   });
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -47,6 +62,9 @@ export function useMusicSync() {
 
       await new Promise<void>((resolve, reject) => {
         audio.onloadedmetadata = () => {
+          // 再生速度を設定
+          audio.playbackRate = state.playbackRate;
+          
           setState((prev) => ({
             ...prev,
             isLoaded: true,
@@ -120,15 +138,33 @@ export function useMusicSync() {
       // 既に再生中なら一時停止
       audioRef.current.pause();
       pausedTimeRef.current = audioRef.current.currentTime;
+      // 他のトラックも一時停止
+      state.tracks.forEach((track) => {
+        if (track.audioElement) {
+          track.audioElement.pause();
+        }
+      });
       setState((prev) => ({ ...prev, isPlaying: false }));
     } else {
       // 再生開始
       audioRef.current.currentTime = pausedTimeRef.current;
+      audioRef.current.playbackRate = state.playbackRate;
       audioRef.current.play();
       startTimeRef.current = performance.now() - pausedTimeRef.current * 1000;
+      
+      // 他のトラックも再生
+      state.tracks.forEach((track) => {
+        if (track.audioElement && track.enabled) {
+          track.audioElement.currentTime = pausedTimeRef.current;
+          track.audioElement.playbackRate = state.playbackRate;
+          track.audioElement.volume = track.volume;
+          track.audioElement.play();
+        }
+      });
+      
       setState((prev) => ({ ...prev, isPlaying: true }));
     }
-  }, [state.isLoaded, state.isPlaying]);
+  }, [state.isLoaded, state.isPlaying, state.playbackRate, state.tracks]);
 
   // 音楽を停止
   const stopMusic = useCallback(() => {
@@ -136,8 +172,17 @@ export function useMusicSync() {
     audioRef.current.pause();
     audioRef.current.currentTime = 0;
     pausedTimeRef.current = 0;
+    
+    // 他のトラックも停止
+    state.tracks.forEach((track) => {
+      if (track.audioElement) {
+        track.audioElement.pause();
+        track.audioElement.currentTime = 0;
+      }
+    });
+    
     setState((prev) => ({ ...prev, isPlaying: false, currentTime: 0 }));
-  }, []);
+  }, [state.tracks]);
 
   // 音楽の時間を更新
   useEffect(() => {
@@ -319,6 +364,112 @@ export function useMusicSync() {
     setState((prev) => ({ ...prev, bpm }));
   }, []);
 
+  // 再生速度を設定（BPM調整による速度変更）
+  const setPlaybackRate = useCallback((rate: number) => {
+    const clampedRate = Math.max(0.5, Math.min(2.0, rate));
+    if (audioRef.current) {
+      audioRef.current.playbackRate = clampedRate;
+    }
+    state.tracks.forEach((track) => {
+      if (track.audioElement) {
+        track.audioElement.playbackRate = clampedRate;
+      }
+    });
+    setState((prev) => ({ ...prev, playbackRate: clampedRate }));
+  }, [state.tracks]);
+
+  // BPMから再生速度を計算（基準BPMとの比率）
+  const setPlaybackRateFromBPM = useCallback((targetBPM: number, baseBPM: number) => {
+    if (baseBPM <= 0) return;
+    const rate = targetBPM / baseBPM;
+    setPlaybackRate(rate);
+  }, [setPlaybackRate]);
+
+  // トラックを追加
+  const addTrack = useCallback((name: string, file: File) => {
+    const track: MusicTrack = {
+      id: `track-${Date.now()}`,
+      name,
+      file,
+      audioElement: null,
+      volume: 1.0,
+      enabled: true,
+    };
+    
+    // オーディオ要素を作成
+    const url = URL.createObjectURL(file);
+    const audio = new Audio(url);
+    audio.volume = track.volume;
+    track.audioElement = audio;
+    
+    setState((prev) => ({
+      ...prev,
+      tracks: [...prev.tracks, track],
+    }));
+    
+    return track.id;
+  }, []);
+
+  // トラックを削除
+  const removeTrack = useCallback((trackId: string) => {
+    setState((prev) => {
+      const track = prev.tracks.find((t) => t.id === trackId);
+      if (track?.audioElement) {
+        track.audioElement.pause();
+        if (track.file) {
+          URL.revokeObjectURL(track.audioElement.src);
+        }
+      }
+      return {
+        ...prev,
+        tracks: prev.tracks.filter((t) => t.id !== trackId),
+      };
+    });
+  }, []);
+
+  // トラックの音量を設定
+  const setTrackVolume = useCallback((trackId: string, volume: number) => {
+    const clampedVolume = Math.max(0, Math.min(1, volume));
+    setState((prev) => {
+      const updatedTracks = prev.tracks.map((track) => {
+        if (track.id === trackId) {
+          if (track.audioElement) {
+            track.audioElement.volume = clampedVolume;
+          }
+          return { ...track, volume: clampedVolume };
+        }
+        return track;
+      });
+      return { ...prev, tracks: updatedTracks };
+    });
+  }, []);
+
+  // トラックの有効/無効を切り替え
+  const setTrackEnabled = useCallback((trackId: string, enabled: boolean) => {
+    setState((prev) => {
+      const updatedTracks = prev.tracks.map((track) => {
+        if (track.id === trackId) {
+          if (track.audioElement) {
+            if (enabled && prev.isPlaying) {
+              track.audioElement.currentTime = pausedTimeRef.current;
+              track.audioElement.play();
+            } else if (!enabled) {
+              track.audioElement.pause();
+            }
+          }
+          return { ...track, enabled };
+        }
+        return track;
+      });
+      return { ...prev, tracks: updatedTracks };
+    });
+  }, []);
+
+  // 自動シンク機能（マーカーに合わせてフォーメーション変更）
+  const setAutoSync = useCallback((enabled: boolean) => {
+    setState((prev) => ({ ...prev, autoSyncEnabled: enabled }));
+  }, []);
+
   // 手動同期（現在の音楽時間を現在のカウントに同期）
   // カウントを指定しない場合は、最後のマーカーのカウント+1を使用
   const syncCurrentTime = useCallback((currentCount?: number) => {
@@ -359,6 +510,13 @@ export function useMusicSync() {
     getCountFromMusicTime,
     getMusicTimeFromCount,
     setBPM,
+    setPlaybackRate,
+    setPlaybackRateFromBPM,
+    addTrack,
+    removeTrack,
+    setTrackVolume,
+    setTrackEnabled,
+    setAutoSync,
     syncCurrentTime,
     seekToCount,
     seekToMusicTime,

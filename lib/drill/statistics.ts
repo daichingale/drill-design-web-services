@@ -4,17 +4,9 @@
 import type { UiSet } from "@/lib/drill/uiTypes";
 import type { WorldPos } from "@/lib/drill/types";
 import type { Member } from "@/context/MembersContext";
+import { calculateDistance } from "./math";
 
 const STEP_M = 5 / 8; // 1ステップ = 0.625m
-
-/**
- * 2点間の距離を計算（メートル）
- */
-function calculateDistance(pos1: WorldPos, pos2: WorldPos): number {
-  const dx = pos2.x - pos1.x;
-  const dy = pos2.y - pos1.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
 
 /**
  * 移動距離の統計を計算
@@ -28,6 +20,7 @@ export function calculateMovementDistance(
   maxDistance: number; // 最大移動距離（メートル）
   minDistance: number; // 最小移動距離（メートル）
   memberDistances: Array<{ memberId: string; memberName: string; distance: number }>;
+  distanceDistribution: Array<{ range: string; count: number }>; // 移動距離の分布
 } {
   const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
   const memberDistances: Array<{ memberId: string; memberName: string; distance: number }> = [];
@@ -59,12 +52,26 @@ export function calculateMovementDistance(
   const maxDistance = distances.length > 0 ? Math.max(...distances) : 0;
   const minDistance = distances.length > 0 ? Math.min(...distances) : 0;
 
+  // 移動距離の分布を計算
+  const distributionRanges = [
+    { min: 0, max: 5, label: "0-5m" },
+    { min: 5, max: 10, label: "5-10m" },
+    { min: 10, max: 20, label: "10-20m" },
+    { min: 20, max: 50, label: "20-50m" },
+    { min: 50, max: Infinity, label: "50m以上" },
+  ];
+  const distanceDistribution = distributionRanges.map((range) => ({
+    range: range.label,
+    count: distances.filter((d) => d >= range.min && d < range.max).length,
+  }));
+
   return {
     totalDistance,
     averageDistance,
     maxDistance,
     minDistance,
     memberDistances: memberDistances.sort((a, b) => b.distance - a.distance),
+    distanceDistribution,
   };
 }
 
@@ -320,6 +327,17 @@ export function calculateCollisionRisk(
     riskBySet,
   };
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 

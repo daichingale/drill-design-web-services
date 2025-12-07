@@ -23,9 +23,12 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
-  accounts      Account[]
-  sessions      Session[]
-  drills        Drill[]
+  accounts           Account[]
+  sessions           Session[]
+  drills             Drill[]
+  drillCollaborators DrillCollaborator[]
+  changeHistory      ChangeHistory[]
+  comments           Comment[]
   
   @@map("users")
 }
@@ -79,9 +82,12 @@ model Drill {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
-  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sets        Set[]
-  members     Member[]
+  user              User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sets              Set[]
+  members           Member[]
+  collaborators     DrillCollaborator[]
+  changeHistory     ChangeHistory[]
+  comments          Comment[]
   
   @@index([userId])
   @@map("drills")
@@ -121,4 +127,65 @@ model Member {
   @@unique([drillId, memberId])
   @@index([drillId])
   @@map("members")
+}
+
+// ドリルへのアクセス権限管理
+model DrillCollaborator {
+  id        String   @id @default(uuid())
+  drillId   String
+  userId    String
+  role      String   @default("viewer") // "owner", "editor", "viewer"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  drill     Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([drillId, userId])
+  @@index([drillId])
+  @@index([userId])
+  @@map("drill_collaborators")
+}
+
+// 変更履歴の追跡
+model ChangeHistory {
+  id          String   @id @default(uuid())
+  drillId     String
+  userId      String
+  action      String   // "create", "update", "delete", "move", "add_member", etc.
+  entityType  String   // "set", "member", "drill", etc.
+  entityId    String?
+  changes     Json?    // 変更内容の詳細
+  createdAt   DateTime @default(now())
+  
+  drill       Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([drillId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("change_history")
+}
+
+// コメント機能
+model Comment {
+  id          String   @id @default(uuid())
+  drillId     String
+  userId      String
+  entityType  String   // "set", "member", "drill", etc.
+  entityId    String?  // コメント対象のID（nullの場合はドリル全体へのコメント）
+  content     String   @db.Text
+  x           Float?   // フィールド上の位置（オプション）
+  y           Float?   // フィールド上の位置（オプション）
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  
+  drill       Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([drillId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("comments")
 }

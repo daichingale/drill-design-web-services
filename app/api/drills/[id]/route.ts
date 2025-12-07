@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import type { Member } from "@/context/MembersContext";
+import { requireAuth, AuthError } from "@/lib/auth";
+import { recordChange } from "@/lib/drill/collaboration";
+import { broadcastChange } from "./sync/route";
 
 // GET: 特定のドリル取得
 export async function GET(
@@ -129,7 +132,7 @@ export async function PUT(
     const { prisma } = await import("@/lib/prisma");
     
     const body = await request.json();
-    const { title, dataName, sets, members } = body;
+    const { title, dataName, sets, members, version, clientTimestamp } = body;
 
     // 既存のドリルを取得（ユーザー所有のドリルのみ）
     const existingDrill = await prisma.drill.findUnique({
@@ -142,6 +145,26 @@ export async function PUT(
         { error: "Drill not found" },
         { status: 404 }
       );
+    }
+
+    // バージョン競合チェック（簡易実装）
+    // updatedAtをバージョンとして使用
+    if (version && clientTimestamp) {
+      const serverTimestamp = existingDrill.updatedAt.getTime();
+      const clientTime = new Date(clientTimestamp).getTime();
+      
+      // クライアントのタイムスタンプがサーバーより古い場合は競合
+      if (clientTime < serverTimestamp - 1000) { // 1秒のマージン
+        return NextResponse.json(
+          {
+            error: "Version conflict",
+            message: "ドリルが他のユーザーによって更新されています。最新の状態を取得してください。",
+            serverVersion: serverTimestamp,
+            clientVersion: clientTime,
+          },
+          { status: 409 }
+        );
+      }
     }
 
     // トランザクションで更新
@@ -189,12 +212,38 @@ export async function PUT(
       return drill;
     });
 
-            return NextResponse.json({
-              id: updatedDrill.id,
-              title: updatedDrill.title,
-              dataName: updatedDrill.dataName,
-              updatedAt: updatedDrill.updatedAt.toISOString(),
-            });
+    // 変更履歴を記録
+    await recordChange({
+      drillId: id,
+      userId: user.id,
+      action: "update",
+      entityType: "drill",
+      changes: {
+        title: title !== undefined ? title : existingDrill.title,
+        dataName: dataName !== undefined ? dataName : existingDrill.dataName,
+        setsCount: sets?.length || existingDrill.sets.length,
+        membersCount: members?.length || existingDrill.members.length,
+      },
+    });
+
+    // リアルタイム同期をブロードキャスト
+    await broadcastChange(id, {
+      type: "drill_updated",
+      userId: user.id,
+      data: {
+        id: updatedDrill.id,
+        title: updatedDrill.title,
+        dataName: updatedDrill.dataName,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    return NextResponse.json({
+      id: updatedDrill.id,
+      title: updatedDrill.title,
+      dataName: updatedDrill.dataName,
+      updatedAt: updatedDrill.updatedAt.toISOString(),
+    });
           } catch (error) {
             console.error("Failed to update drill:", error);
             

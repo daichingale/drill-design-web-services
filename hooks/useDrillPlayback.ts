@@ -144,6 +144,14 @@ export function useDrillPlayback(
   }, [sets, members, countsPerSecond]);
 
   // アニメーションループ
+  const prevCountRef = useRef<number>(0);
+  const loopRangeEnabledRef = useRef<boolean>(loopRangeEnabled);
+  
+  // loopRangeEnabledの変更を追跡
+  useEffect(() => {
+    loopRangeEnabledRef.current = loopRangeEnabled;
+  }, [loopRangeEnabled]);
+
   useEffect(() => {
     let frameId: number;
     let last = performance.now();
@@ -162,8 +170,17 @@ export function useDrillPlayback(
           if (dt > 0) {
             engine.update(dt);
             const positions = engine.getCurrentPositionsMap();
-            setPlaybackPositions(positions);
-            setCurrentCount(engine.currentCount);
+            const newCount = engine.currentCount;
+            
+            // 値が実際に変更された場合のみ状態を更新（無限ループを防ぐ）
+            if (newCount !== prevCountRef.current) {
+              prevCountRef.current = newCount;
+              setPlaybackPositions(positions);
+              setCurrentCount(newCount);
+            } else {
+              // カウントが変わらなくても位置が変わる可能性があるため、位置のみ更新
+              setPlaybackPositions(positions);
+            }
           }
         }
 
@@ -175,10 +192,11 @@ export function useDrillPlayback(
           !isRecordingRef.current &&
           !musicSyncModeRef.current
         ) {
-          if (loopRangeEnabled) {
+          if (loopRangeEnabledRef.current) {
             // ループレンジ: 終了カウントに到達したら開始カウントに戻して再生継続
             engine.setCount(range.startCount);
             const loopPositions = engine.getCurrentPositionsMap();
+            prevCountRef.current = range.startCount;
             setCurrentCount(range.startCount);
             setPlaybackPositions(loopPositions);
           } else {
@@ -189,6 +207,7 @@ export function useDrillPlayback(
 
             engine.pause();
             setIsPlaying(false);
+            prevCountRef.current = range.endCount;
             setCurrentCount(range.endCount); // 終了カウントを設定
             setPlaybackPositions(finalPositions); // 終了位置を保持
             playRangeRef.current = null;
@@ -201,7 +220,7 @@ export function useDrillPlayback(
 
     frameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frameId);
-  }, [isPlaying, loopRangeEnabled]);
+  }, [isPlaying]); // loopRangeEnabledを依存配列から削除（useRefで管理）
 
   // スクラブ（ドラッグで動かす）
   const handleScrub = (count: number) => {

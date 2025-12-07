@@ -32,8 +32,8 @@ export function addGlobalNotification(notification: Omit<Notification, "id" | "t
   globalNotifications = [...globalNotifications, newNotification];
   notificationListeners.forEach((listener) => listener(globalNotifications));
 
-  // 自動削除（エラーと警告は10秒、成功と情報は5秒）
-  const autoRemoveDelay = notification.type === "error" || notification.type === "warning" ? 10000 : 5000;
+  // 自動削除（エラーと警告は10秒、成功と情報は2秒）
+  const autoRemoveDelay = notification.type === "error" || notification.type === "warning" ? 10000 : 2000;
   setTimeout(() => {
     removeGlobalNotification(newNotification.id);
   }, autoRemoveDelay);

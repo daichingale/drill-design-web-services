@@ -15,6 +15,7 @@ export default function MenuBar() {
   // 常に表示する「表示」メニュー
   const viewMenuGroup = {
     label: t("menu.view"),
+    icon: "👁️",
     items: [
       {
         label: t("menu.view.commandPalette"),

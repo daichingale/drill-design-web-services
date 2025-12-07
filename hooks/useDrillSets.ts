@@ -1,7 +1,7 @@
 // hooks/useDrillSets.ts
 "use client";
 
-import { useEffect,useCallback,useState,useRef } from "react";
+import { useEffect,useCallback,useState,useRef, type Dispatch, type SetStateAction } from "react";
 import type { WorldPos, Member, ArcBinding } from "@/lib/drill/types";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import { useSettings } from "@/context/SettingsContext";
@@ -54,6 +54,7 @@ type UseDrillSetsResult = {
   handleChangeSetName: (id: string, name: string) => void; // セット名編集
   copySet: (sourceSetId: string, targetSetId?: string) => void; // セット全体をコピー
   copySelectedMembers: (targetSetId: string) => void; // 選択メンバーのみコピー
+  duplicateSet: (setId: string) => void; // セットを複製（新しいセットを作成）
 
   arrangeLineSelected: () => void;
   arrangeLineBySelectionOrder: () => void; // 選択順に整列
@@ -67,7 +68,9 @@ type UseDrillSetsResult = {
   arrangeBox: (center: WorldPos, width: number, height: number, spacing?: number) => void;
   
   // 変形・回転
-  rotateSelected: (center: WorldPos, angle: number) => void;
+  rotateSelected: (center: WorldPos, angle: number, useInitialPositions?: boolean, addToTotal?: boolean) => void;
+  setRotationInitialPositions: () => void;
+  clearRotationInitialPositions: () => void;
   scaleSelected: (center: WorldPos, scaleX: number, scaleY?: number) => void;
 
   arcBinding: ArcBinding | null;
@@ -81,6 +84,8 @@ type UseDrillSetsResult = {
   deleteSet: (id: string) => void;
   reorderSet: (id: string, direction: 'up' | 'down') => void;
   restoreState: (newSets: UiSet[], newSelectedIds: string[], newCurrentSetId: string) => void;
+  addIntermediatePoint: (memberId: string, count: number, position: WorldPos) => void;
+  removeIntermediatePoint: (memberId: string, count: number) => void;
 };
 
 // members: Member[] / clampAndSnap: (WorldPos) => WorldPos を外から注入
@@ -309,6 +314,7 @@ const handleMove = (id: string, newPosRaw: WorldPos) => {
         positions: duplicated,
         note: currentSet.note,
         instructions: currentSet.instructions || "",
+        nextMove: currentSet.nextMove || "",
       };
 
       const sorted = [...prev, newSet].sort(
@@ -359,6 +365,7 @@ const handleMove = (id: string, newPosRaw: WorldPos) => {
         positions: basePositions,
         note: baseNote,
         instructions: base?.instructions || "",
+        nextMove: base?.nextMove || "",
       };
 
       const next = [...prev, newSet].sort(
@@ -573,6 +580,26 @@ const handleSelectBulk = (ids: string[]) => {
     },
     [selectedIds, sets, currentSetId]
   );
+
+  // セットを複製（新しいセットを作成）
+  const duplicateSet = useCallback((sourceSetId: string) => {
+    const sourceSet = sets.find((s) => s.id === sourceSetId);
+    if (!sourceSet) return;
+
+    setSets((prev) => {
+      const newId = `set-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newSet: UiSet = {
+        ...structuredClone(sourceSet), // 全体をディープコピー
+        id: newId,
+        name: `${sourceSet.name} (Copy)`,
+        startCount: sourceSet.startCount + 1, // 元のセットの直後に配置
+      };
+
+      const updatedSets = [...prev, newSet];
+      const sorted = updatedSets.sort((a, b) => a.startCount - b.startCount);
+      return renumberSetsByOrder(sorted);
+    });
+  }, [sets]);
 
   // Set の startCount 編集（重複は NG）
   const handleChangeSetStartCount = (id: string, value: number) => {
@@ -1172,6 +1199,101 @@ const handleSelectBulk = (ids: string[]) => {
     [selectedIds, currentSetId, clampAndSnap, sets]
   );
 
+  // 中間点を追加する関数
+  const addIntermediatePoint = useCallback(
+    (memberId: string, count: number, position: WorldPos) => {
+      const clampedPos = clampAndSnap(position);
+      
+      setSets((prev) => {
+        const sortedSets = [...prev].sort((a, b) => a.startCount - b.startCount);
+        
+        return prev.map((set) => {
+          // カウントがセットのstartCountと一致する場合は、そのセットのpositionsを更新
+          if (set.startCount === count) {
+            return {
+              ...set,
+              positions: {
+                ...set.positions,
+                [memberId]: clampedPos,
+              },
+            };
+          }
+          
+          // カウントがセットのstartCountと一致しない場合は、positionsByCountに追加
+          // 最も近いセットを探す（カウントがそのセットの範囲内にある）
+          let targetSet: UiSet | null = null;
+          
+          for (let i = 0; i < sortedSets.length; i++) {
+            const current = sortedSets[i];
+            const next = sortedSets[i + 1];
+            
+            if (count >= current.startCount && (!next || count < next.startCount)) {
+              targetSet = current;
+              break;
+            }
+          }
+          
+          if (!targetSet || targetSet.id !== set.id) return set;
+          
+          // positionsByCountに追加
+          const newPositionsByCount = targetSet.positionsByCount
+            ? { ...targetSet.positionsByCount }
+            : {};
+          
+          if (!newPositionsByCount[count]) {
+            newPositionsByCount[count] = {};
+          }
+          
+          newPositionsByCount[count][memberId] = clampedPos;
+          
+          return {
+            ...set,
+            positionsByCount: newPositionsByCount,
+          };
+        });
+      });
+    },
+    [clampAndSnap]
+  );
+
+  // 中間点を削除する関数
+  const removeIntermediatePoint = useCallback(
+    (memberId: string, count: number) => {
+      setSets((prev) =>
+        prev.map((set) => {
+          // このカウントがセットのstartCountと一致する場合は、positionsから削除しない
+          // （startCountの位置は削除できない）
+          if (set.startCount === count) {
+            return set;
+          }
+          
+          // positionsByCountから削除
+          if (!set.positionsByCount || !set.positionsByCount[count]) {
+            return set;
+          }
+          
+          const newPositionsByCount = { ...set.positionsByCount };
+          if (newPositionsByCount[count][memberId]) {
+            delete newPositionsByCount[count][memberId];
+            
+            // そのカウントに他のメンバーがいない場合は、カウント自体を削除
+            if (Object.keys(newPositionsByCount[count]).length === 0) {
+              delete newPositionsByCount[count];
+            }
+          }
+          
+          return {
+            ...set,
+            positionsByCount: Object.keys(newPositionsByCount).length > 0
+              ? newPositionsByCount
+              : undefined,
+          };
+        })
+      );
+    },
+    []
+  );
+
   return {
     sets,
     currentSet,
@@ -1191,6 +1313,7 @@ const handleSelectBulk = (ids: string[]) => {
     handleChangeSetName,
     copySet,
     copySelectedMembers,
+    duplicateSet,
 
     arrangeLineSelected,
     arrangeLineBySelectionOrder,
@@ -1220,5 +1343,7 @@ const handleSelectBulk = (ids: string[]) => {
     deleteSet,
     reorderSet,
     restoreState,  // ★ 追加：Undo/Redo用
+    addIntermediatePoint,  // 中間点を追加
+    removeIntermediatePoint,  // 中間点を削除
   };
 }

@@ -836,7 +836,16 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
                 pointerEvents: "none",
               }}
             >
-              {/* 左ハンドル */}
+              {(() => {
+                // 範囲が非常に小さい（被っている）場合は、ハンドルを左右にずらす
+                const rangeWidth = (rangeEnd - rangeStart) * pxPerCount;
+                const isOverlapping = rangeWidth < 16; // 16px未満の場合は被っていると判断
+                const startOffset = isOverlapping ? -6 : 0; // 開始位置は左にずらす
+                const endOffset = isOverlapping ? -6 : 0; // 終了位置は右にずらす（right: -6で右に出す）
+                
+                return (
+                  <>
+                    {/* 左ハンドル（開始位置・上に配置・青） */}
               <div
                 onMouseDown={(e) => {
                   e.stopPropagation();
@@ -844,19 +853,22 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
                 }}
                 style={{
                   position: "absolute",
-                  left: 0,
-                  top: -6,
-                  width: 10,
-                  height: 12,
+                        left: startOffset,
+                        top: -8,
+                        width: 12,
+                        height: 14,
                   background:
-                    "linear-gradient(to bottom, rgba(148,163,184,0.9), rgba(51,65,85,0.9))",
+                          "linear-gradient(to bottom, rgba(59,130,246,0.95), rgba(37,99,235,0.95))",
                   borderRadius: 3,
-                  border: "1px solid rgba(15,23,42,0.9)",
+                        border: "1px solid rgba(59,130,246,1)",
                   cursor: "ew-resize",
                   pointerEvents: "auto",
+                        boxShadow: "0 0 4px rgba(59,130,246,0.6)",
+                        zIndex: 10,
                 }}
+                      title="範囲開始位置"
               />
-              {/* 右ハンドル */}
+                    {/* 右ハンドル（終了位置・下に配置・紫） */}
               <div
                 onMouseDown={(e) => {
                   e.stopPropagation();
@@ -864,18 +876,24 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
                 }}
                 style={{
                   position: "absolute",
-                  right: 0,
-                  top: -6,
-                  width: 10,
-                  height: 12,
+                        right: endOffset,
+                        top: -2,
+                        width: 12,
+                        height: 14,
                   background:
-                    "linear-gradient(to bottom, rgba(148,163,184,0.9), rgba(51,65,85,0.9))",
+                          "linear-gradient(to bottom, rgba(147,51,234,0.95), rgba(126,34,206,0.95))",
                   borderRadius: 3,
-                  border: "1px solid rgba(15,23,42,0.9)",
+                        border: "1px solid rgba(147,51,234,1)",
                   cursor: "ew-resize",
                   pointerEvents: "auto",
+                        boxShadow: "0 0 4px rgba(147,51,234,0.6)",
+                        zIndex: 10,
                 }}
+                      title="範囲終了位置"
               />
+                  </>
+                );
+              })()}
             </div>
 
             <Playhead

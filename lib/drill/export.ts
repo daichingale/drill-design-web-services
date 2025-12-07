@@ -89,13 +89,24 @@ export async function exportSetsToPDF(
       ? sets
       : sets.filter((s) => s.id === currentSetId);
 
+    const setsPerPage = pdfOptions.setsPerPage || 1;
+    let setsOnCurrentPage = 0;
+    let currentY = margin;
+
     for (let i = 0; i < setsToExport.length; i++) {
-      if (i > 0) {
+      // 新しいページが必要な場合
+      if (i > 0 && setsOnCurrentPage >= setsPerPage) {
         pdf.addPage();
+        currentY = margin;
+        setsOnCurrentPage = 0;
       }
 
       const set = setsToExport[i];
-      let currentY = margin;
+      
+      // 複数セット/ページの場合、セット間のスペースを追加
+      if (setsOnCurrentPage > 0) {
+        currentY += 10; // セット間のスペース（10mm）
+      }
 
       // タイトル（セット名）
       if (contentOptions.includeSetName !== false) {
@@ -120,6 +131,7 @@ export async function exportSetsToPDF(
       const fieldMaxHeight = pageHeight - currentY - margin - 10;
 
       // セットの画像を取得
+      let actualImageHeight = 0;
       if (contentOptions.includeField !== false) {
         const imageBlob = await getSetImage(set.id);
         if (imageBlob) {
@@ -142,6 +154,9 @@ export async function exportSetsToPDF(
                   imgHeight = fieldMaxHeight;
                   imgWidth = imgHeight * aspectRatio;
                 }
+
+                // 画像の実際の高さを記録
+                actualImageHeight = imgHeight;
 
                 // 画像を左側に配置
                 const imageX = fieldMargin;
@@ -230,6 +245,20 @@ export async function exportSetsToPDF(
         textBoxWidth - 4
       );
       pdf.text(nextMoveLines, textBoxX + 2, nextMoveBoxY + 10);
+      
+      // 現在のセットの高さを計算（画像の高さ + テキストボックスの高さ + 余白）
+      const setHeight = Math.max(actualImageHeight, textBoxHeight) + 20; // 余裕を持たせる
+      
+      setsOnCurrentPage++;
+      
+      // 次のセットのためにY位置を更新
+      if (setsOnCurrentPage < setsPerPage && i < setsToExport.length - 1) {
+        // 次のセットが同じページに収まる場合
+        currentY += setHeight;
+      } else {
+        // ページが満杯になった、または最後のセット
+        // 次のループで新しいページが開始される
+      }
     }
 
     // PDFをダウンロード

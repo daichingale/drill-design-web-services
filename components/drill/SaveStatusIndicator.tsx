@@ -28,12 +28,25 @@ export default function SaveStatusIndicator({
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [isVisible, setIsVisible] = useState(false);
   const lastSavedDataRef = useRef<string>("");
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // データのハッシュを計算（簡易版）
   const getDataHash = (sets: UiSet[], members: Member[]) => {
     return JSON.stringify({ sets, members });
+  };
+
+  // 表示を自動的に非表示にする
+  const scheduleHide = () => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+    }
+    // 2秒後に非表示
+    hideTimerRef.current = setTimeout(() => {
+      setIsVisible(false);
+    }, 2000);
   };
 
   // 自動保存の実行（通知なし）
@@ -48,10 +61,13 @@ export default function SaveStatusIndicator({
         saveDrillMetadata({ title: drillTitle, dataName: drillDataName });
       }
 
-      setLastSavedAt(new Date());
+      const savedAt = new Date();
+      setLastSavedAt(savedAt);
       setHasUnsavedChanges(false);
       lastSavedDataRef.current = getDataHash(sets, members);
-      // 自動保存時は通知を出さない（サイレント保存）
+      // 自動保存時は短時間表示してから消す
+      setIsVisible(true);
+      scheduleHide();
     } catch (error) {
       console.error("Auto-save failed:", error);
       // エラー時のみ通知
@@ -82,6 +98,7 @@ export default function SaveStatusIndicator({
     // データが変更された場合
     if (currentHash !== lastSavedDataRef.current) {
       setHasUnsavedChanges(true);
+      setIsVisible(true); // 未保存の変更がある場合は表示
 
       // 自動保存タイマーをリセット
       if (autoSaveTimerRef.current) {
@@ -103,6 +120,18 @@ export default function SaveStatusIndicator({
     };
   }, [sets, members, autoSaveEnabled]);
 
+  // クリーンアップ
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      if (hideTimerRef.current) {
+        clearTimeout(hideTimerRef.current);
+      }
+    };
+  }, []);
+
   // 手動保存
   const handleManualSave = async () => {
     if (isSaving) return;
@@ -120,9 +149,14 @@ export default function SaveStatusIndicator({
         await onSaveToDatabase();
       }
 
-      setLastSavedAt(new Date());
+      const savedAt = new Date();
+      setLastSavedAt(savedAt);
       setHasUnsavedChanges(false);
       lastSavedDataRef.current = getDataHash(sets, members);
+
+      // 短時間表示してから消す
+      setIsVisible(true);
+      scheduleHide();
 
       addGlobalNotification({
         type: "success",
@@ -130,6 +164,7 @@ export default function SaveStatusIndicator({
       });
     } catch (error) {
       console.error("Manual save failed:", error);
+      setIsVisible(true); // エラー時も表示
       addGlobalNotification({
         type: "error",
         message: "保存に失敗しました",
@@ -148,8 +183,19 @@ export default function SaveStatusIndicator({
     });
   };
 
+  // 表示条件: 未保存の変更がある、または保存中、または保存直後（短時間）
+  const shouldShow = isVisible || isSaving || hasUnsavedChanges;
+
+  if (!shouldShow) {
+    return null;
+  }
+
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2 bg-slate-800/90 backdrop-blur-sm border border-slate-700 rounded-lg px-3 py-2 shadow-lg">
+    <div className={`fixed bottom-4 right-4 z-40 flex items-center gap-2 bg-slate-800/90 backdrop-blur-sm border rounded-lg px-3 py-2 shadow-lg transition-all ${
+      hasUnsavedChanges 
+        ? "border-yellow-500/50 shadow-yellow-500/20" 
+        : "border-slate-700"
+    }`}>
       {/* 自動保存のON/OFF */}
       <button
         onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
@@ -170,13 +216,13 @@ export default function SaveStatusIndicator({
           <span>保存中...</span>
         </div>
       ) : hasUnsavedChanges ? (
-        <div className="flex items-center gap-2 text-xs text-yellow-400">
-          <span>●</span>
-          <span>未保存の変更</span>
+        <div className="flex items-center gap-2 text-xs text-yellow-400 animate-pulse">
+          <span className="text-yellow-500">●</span>
+          <span className="font-semibold">未保存の変更</span>
         </div>
       ) : lastSavedAt ? (
         <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span>✓</span>
+          <span className="text-emerald-400">✓</span>
           <span>保存済み {formatTime(lastSavedAt)}</span>
         </div>
       ) : null}
@@ -185,7 +231,11 @@ export default function SaveStatusIndicator({
       <button
         onClick={handleManualSave}
         disabled={isSaving}
-        className="text-xs px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
+        className={`text-xs px-2 py-1 rounded transition-colors ${
+          hasUnsavedChanges
+            ? "bg-yellow-600 hover:bg-yellow-700 text-white"
+            : "bg-blue-600 hover:bg-blue-700 text-white"
+        } disabled:opacity-50 disabled:cursor-not-allowed`}
         title="手動保存 (Ctrl+S)"
       >
         保存

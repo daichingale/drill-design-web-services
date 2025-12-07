@@ -13,6 +13,8 @@ import MenuBar from "@/components/MenuBar";
 import HeaderControls from "@/components/HeaderControls";
 import ErrorNotification from "@/components/ErrorNotification";
 import SessionProvider from "@/components/providers/SessionProvider";
+import FontProvider from "@/components/providers/FontProvider";
+import MonitoringProvider from "@/components/providers/MonitoringProvider";
 
 export const metadata: Metadata = {
   title: "Drill Design Web Services",
@@ -25,12 +27,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-screen bg-slate-900 text-slate-100">
         {/* 全体で共有するコンテキスト */}
         <SessionProvider>
-          <I18nProvider>
-            <SettingsProvider>
-              <ShortcutProvider>
-                <ClipboardProvider>
-                  <MembersProvider>
-                    <MenuProvider>
+          <MonitoringProvider>
+            <I18nProvider>
+              <SettingsProvider>
+                <FontProvider>
+                  <ShortcutProvider>
+                    <ClipboardProvider>
+                      <MembersProvider>
+                        <MenuProvider>
                   {/* メニューバー（固定、最上部） */}
                   <div className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur rounded-b-lg">
                 <div className="mx-auto max-w-full">
@@ -59,12 +63,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <main className="mx-auto max-w-[98vw] px-2 py-4">{children}</main>
                 {/* エラー通知 */}
                 <ErrorNotification />
-                    </MenuProvider>
-                  </MembersProvider>
-                </ClipboardProvider>
-              </ShortcutProvider>
-            </SettingsProvider>
-          </I18nProvider>
+                        </MenuProvider>
+                      </MembersProvider>
+                    </ClipboardProvider>
+                  </ShortcutProvider>
+                </FontProvider>
+              </SettingsProvider>
+            </I18nProvider>
+          </MonitoringProvider>
         </SessionProvider>
       </body>
     </html>

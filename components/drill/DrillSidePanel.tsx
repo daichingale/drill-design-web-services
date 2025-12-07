@@ -1,7 +1,8 @@
 // components/drill/DrillSidePanel.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { List } from "react-window";
 import type { WorldPos } from "../../lib/drill/types";
 import { PART_LIST } from "../../app/constants/parts";
 import {
@@ -9,6 +10,7 @@ import {
   importMembersFromJSON,
 } from "@/lib/drill/storage";
 import SearchFilterPanel from "./SearchFilterPanel";
+import MemberListItem from "./MemberListItem";
 import type { UiSet } from "@/lib/drill/uiTypes";
 
 // 回転操作UIコンポーネント
@@ -146,6 +148,10 @@ type Props = {
   // 選択順序の変更
   onReorderSelection?: (direction: 'up' | 'down') => void;
   onMoveSelectionOrder?: (fromIndex: number, toIndex: number) => void;
+  // メンバー並び替え
+  onReorderMembers?: (fromIndex: number, toIndex: number) => void;
+  // フィールドへのドロップ
+  onDropMemberToField?: (memberId: string, position: WorldPos) => void;
   // フォローザリーダーモード
   followLeaderMode?: boolean;
   onToggleFollowLeader?: () => void;
@@ -169,10 +175,15 @@ export default function DrillSidePanel({
   onFilterSets,
   onReorderSelection,
   onMoveSelectionOrder,
+  onReorderMembers,
+  onDropMemberToField,
   followLeaderMode = false,
   onToggleFollowLeader,
+  onRotateSelected,
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabType>("selection");
+  const [draggedMemberIndex, setDraggedMemberIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkAddPart, setBulkAddPart] = useState("Flute");
@@ -184,6 +195,59 @@ export default function DrillSidePanel({
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // ドラッグハンドラー（条件分岐の外で定義）
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    if (onReorderMembers) {
+      setDraggedMemberIndex(index);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", members[index].id);
+    }
+  }, [onReorderMembers, members]);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    if (onReorderMembers && draggedMemberIndex !== null && draggedMemberIndex !== index) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setDragOverIndex(index);
+    }
+  }, [onReorderMembers, draggedMemberIndex]);
+
+  const handleDrop = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (onReorderMembers && draggedMemberIndex !== null && draggedMemberIndex !== index) {
+      onReorderMembers(draggedMemberIndex, index);
+    }
+    setDraggedMemberIndex(null);
+    setDragOverIndex(null);
+  }, [onReorderMembers, draggedMemberIndex]);
+
+  // 仮想スクロール用のRowComponent（条件分岐の外で定義）
+  const USE_VIRTUAL_SCROLL = members.length >= 50;
+  const ITEM_HEIGHT = 120;
+  const containerHeight = 400;
+
+  const RowComponent = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => (
+    <div style={{ ...style, paddingBottom: '8px' }}>
+      <MemberListItem
+        member={members[index]}
+        index={index}
+        draggedMemberIndex={draggedMemberIndex}
+        dragOverIndex={dragOverIndex}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={() => setDragOverIndex(null)}
+        onDrop={handleDrop}
+        onDragEnd={() => {
+          setDraggedMemberIndex(null);
+          setDragOverIndex(null);
+        }}
+        onDeleteMember={onDeleteMember}
+        onUpdateMember={onUpdateMember}
+        onReorderMembers={!!onReorderMembers}
+      />
+    </div>
+  ), [members, draggedMemberIndex, dragOverIndex, handleDragStart, handleDragOver, handleDrop, onDeleteMember, onUpdateMember, onReorderMembers]);
 
   const handleExportJSON = () => {
     const json = exportMembersToJSON(members as any);
@@ -669,76 +733,44 @@ export default function DrillSidePanel({
                   )}
                 </div>
               ) : (
-                <div className="space-y-2 pr-1">
-                  {members.map((member) => (
-                    <div
-                      key={member.id}
-                      className="p-2.5 rounded-md bg-slate-800/40 border border-slate-700/40 space-y-2"
-                    >
-                      {/* IDと削除ボタン */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono text-slate-400/80">{member.id}</span>
-                        {onDeleteMember && (
-                          <button
-                            onClick={() => {
-                              if (confirm(`「${member.name}」を削除しますか？`)) {
-                                onDeleteMember(member.id);
-                              }
-                            }}
-                            className="px-2 py-0.5 text-[10px] rounded bg-red-600/20 hover:bg-red-600/30 text-red-300 hover:text-red-200 transition-colors"
-                            title="削除"
-                          >
-                            削除
-                          </button>
-                        )}
-                      </div>
-
-                      {/* 名前 */}
-                      {onUpdateMember ? (
-                        <input
-                          type="text"
-                          className="w-full rounded bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 px-2 py-1 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-colors"
-                          value={member.name}
-                          onChange={(e) => onUpdateMember(member.id, "name", e.target.value)}
-                        />
-                      ) : (
-                        <p className="text-sm text-slate-200">{member.name}</p>
-                      )}
-
-                      {/* パート */}
-                      {onUpdateMember ? (
-                        <select
-                          value={member.part}
-                          onChange={(e) => onUpdateMember(member.id, "part", e.target.value)}
-                          className="w-full rounded bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 px-2 py-1 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-colors"
-                        >
-                          {PART_LIST.map((p) => (
-                            <option key={p} value={p} className="bg-slate-800">
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <p className="text-xs text-slate-400">{member.part}</p>
-                      )}
-
-                      {/* 色 */}
-                      {onUpdateMember && (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={member.color ?? "#888888"}
-                            onChange={(e) => onUpdateMember(member.id, "color", e.target.value)}
-                            className="w-8 h-8 rounded border border-slate-600 bg-slate-700/30 cursor-pointer"
-                          />
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            {member.color}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                USE_VIRTUAL_SCROLL ? (
+                  // 仮想スクロールを使用
+                  <div className="pr-1" style={{ height: containerHeight }}>
+                    <List
+                      height={containerHeight}
+                      rowCount={members.length}
+                      rowHeight={ITEM_HEIGHT}
+                      width="100%"
+                      className="sidebar-scrollbar"
+                      rowComponent={RowComponent}
+                      rowProps={{}}
+                    />
+                  </div>
+                ) : (
+                  // 通常のリスト表示（ドラッグ&ドロップ対応）
+                  <div className="space-y-2 pr-1">
+                    {members.map((member, index) => (
+                      <MemberListItem
+                        key={member.id}
+                        member={member}
+                        index={index}
+                        draggedMemberIndex={draggedMemberIndex}
+                        dragOverIndex={dragOverIndex}
+                        onDragStart={handleDragStart}
+                        onDragOver={handleDragOver}
+                        onDragLeave={() => setDragOverIndex(null)}
+                        onDrop={handleDrop}
+                        onDragEnd={() => {
+                          setDraggedMemberIndex(null);
+                          setDragOverIndex(null);
+                        }}
+                        onDeleteMember={onDeleteMember}
+                        onUpdateMember={onUpdateMember}
+                        onReorderMembers={!!onReorderMembers}
+                      />
+                    ))}
+                  </div>
+                )
               )}
             </div>
 

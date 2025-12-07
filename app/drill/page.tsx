@@ -23,6 +23,7 @@ import { useDrillPlayback } from "@/hooks/useDrillPlayback";
 import type { WorldPos } from "@/lib/drill/types";
 import type { Member } from "@/context/MembersContext";
 import type { UiSet } from "@/lib/drill/uiTypes";
+import type { LineEditState, BoxEditState } from "@/types/drillEditor";
 import {
   loadDrillFromLocalStorage,
   autoSaveDrill,
@@ -35,11 +36,15 @@ import {
 import ExportOptionsDialog from "@/components/drill/ExportOptionsDialog";
 import PrintPreviewDialog from "@/components/drill/PrintPreviewDialog";
 import MetadataDialog from "@/components/drill/MetadataDialog";
+import MobileView from "@/components/drill/MobileView";
 import { useMusicSync } from "@/hooks/useMusicSync";
 import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
+import AdvancedMusicSyncPanel from "@/components/drill/AdvancedMusicSyncPanel";
 import MusicAnalysisPanel from "@/components/drill/MusicAnalysisPanel";
 import LearningPanel from "@/components/drill/LearningPanel";
 import StatisticsPanel from "@/components/drill/StatisticsPanel";
+import PerformanceDashboard from "@/components/drill/PerformanceDashboard";
+import PathVisualizationPanel from "@/components/drill/PathVisualizationPanel";
 // import VideoConverterPanel from "@/components/drill/VideoConverterPanel"; // 一時的に非表示
 import CommandPalette, { type Command } from "@/components/drill/CommandPalette";
 import SaveStatusIndicator from "@/components/drill/SaveStatusIndicator";
@@ -51,63 +56,172 @@ import { useClipboard } from "@/context/ClipboardContext";
 import { useKeyboardShortcuts, type ShortcutDefinition } from "@/hooks/useKeyboardShortcuts";
 import ShortcutHelpDialog from "@/components/ShortcutHelpDialog";
 import EditorHelpDialog from "@/components/EditorHelpDialog";
+import OnboardingTutorial from "@/components/OnboardingTutorial";
 import { addGlobalNotification } from "@/components/ErrorNotification";
 import { useShortcuts } from "@/context/ShortcutContext";
+import ProgressBar from "@/components/ProgressBar";
+import { useConflictResolution } from "@/hooks/useConflictResolution";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
+import { useDrillDatabase } from "@/hooks/useDrillDatabase";
+import { useDrillPageState } from "@/hooks/useDrillPageState";
+import { useDrillPageHandlers } from "@/hooks/useDrillPageHandlers";
+import { useSession } from "next-auth/react";
+import CollaboratorsPanel from "@/components/drill/CollaboratorsPanel";
+import CommentsPanel from "@/components/drill/CommentsPanel";
+import ChangeHistoryPanel from "@/components/drill/ChangeHistoryPanel";
 
 // UiSet型はlib/drill/uiTypes.tsからインポートするため、ここでは定義しない
-
-type EditorState = {
-  sets: UiSet[];
-  selectedIds: string[];
-  currentSetId: string;
-};
-
-type LineEditState = {
-  memberIds: string[];
-  start: WorldPos;
-  end: WorldPos;
-} | null;
-
-type BoxEditState = {
-  memberIds: string[];
-  cols: number;
-  rows: number;
-  // 四隅のワールド座標
-  tl: WorldPos; // top-left
-  tr: WorldPos; // top-right
-  br: WorldPos; // bottom-right
-  bl: WorldPos; // bottom-left
-} | null;
+// 型定義はtypes/drillEditor.tsに移動
 
 export default function DrillPage() {
   const { t } = useTranslation();
+  const { data: session } = useSession();
   const { members, setMembers } = useMembers();
   const { settings, updateSettings } = useSettings();
   const { setMenuGroups, setOpenCommandPalette } = useMenu();
-  const [isMounted, setIsMounted] = useState(false);
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [is3DPreviewOpen, setIs3DPreviewOpen] = useState(false);
-  // 一時的な位置（確定前）
-  const [pendingPositions, setPendingPositions] = useState<Record<string, WorldPos> | null>(null);
-  // フォローザリーダーモード
-  const [followLeaderMode, setFollowLeaderMode] = useState(false);
-  // ドリルメタデータ（タイトル・データ名）
-  const [drillTitle, setDrillTitle] = useState<string>("");
-  const [drillDataName, setDrillDataName] = useState<string>("");
-  const [isMetadataDialogOpen, setIsMetadataDialogOpen] = useState(false);
-  const [drillDbId, setDrillDbId] = useState<string | null>(null); // データベースのドリルID
-  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
-  const [editorHelpOpen, setEditorHelpOpen] = useState(false);
-  const [pendingNewMembers, setPendingNewMembers] = useState<Member[] | null>(null);
-  const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
-  const [lineEditState, setLineEditState] = useState<LineEditState>(null);
-  const [boxEditState, setBoxEditState] = useState<BoxEditState>(null);
-  const [confirmedCountsCollapsed, setConfirmedCountsCollapsed] = useState(false);
-  const [filteredMemberIds, setFilteredMemberIds] = useState<string[]>([]);
-  const [filteredSetIds, setFilteredSetIds] = useState<string[]>([]);
+  
+  // 状態管理を集約
+  const pageState = useDrillPageState();
+  const {
+    ui: {
+      isMounted,
+      setIsMounted,
+      commandPaletteOpen,
+      setCommandPaletteOpen,
+      is3DPreviewOpen,
+      setIs3DPreviewOpen,
+      shortcutHelpOpen,
+      setShortcutHelpOpen,
+      editorHelpOpen,
+      setEditorHelpOpen,
+      isMetadataDialogOpen,
+      setIsMetadataDialogOpen,
+      isLayoutModalOpen,
+      setIsLayoutModalOpen,
+      confirmedCountsCollapsed,
+      setConfirmedCountsCollapsed,
+      isMobileView,
+      setIsMobileView,
+    },
+    edit: {
+      pendingPositions: editPendingPositions,
+      setPendingPositions: editSetPendingPositions,
+      lineEditState: editLineEditState,
+      setLineEditState: editSetLineEditState,
+      boxEditState: editBoxEditState,
+      setBoxEditState: editSetBoxEditState,
+      followLeaderMode: editFollowLeaderMode,
+      setFollowLeaderMode: editSetFollowLeaderMode,
+    },
+    metadata: {
+      drillTitle,
+      setDrillTitle,
+      drillDataName,
+      setDrillDataName,
+      drillDbId,
+      setDrillDbId,
+    },
+    filter: {
+      filteredMemberIds: filterFilteredMemberIds,
+      setFilteredMemberIds: filterSetFilteredMemberIds,
+      filteredSetIds: filterFilteredSetIds,
+      setFilteredSetIds: filterSetFilteredSetIds,
+    },
+    newMember: {
+      pendingNewMembers: newMemberPendingNewMembers,
+      setPendingNewMembers: newMemberSetPendingNewMembers,
+    },
+  } = pageState;
+
+  // エイリアス（後方互換性のため）
+  const pendingPositions = editPendingPositions;
+  const setPendingPositions = editSetPendingPositions;
+  const lineEditState = editLineEditState;
+  const setLineEditState = editSetLineEditState;
+  const boxEditState = editBoxEditState;
+  const setBoxEditState = editSetBoxEditState;
+  const followLeaderMode = editFollowLeaderMode;
+  const setFollowLeaderMode = editSetFollowLeaderMode;
+  const filteredMemberIds = filterFilteredMemberIds;
+  const setFilteredMemberIds = filterSetFilteredMemberIds;
+  const filteredSetIds = filterFilteredSetIds;
+  const setFilteredSetIds = filterSetFilteredSetIds;
+  const pendingNewMembers = newMemberPendingNewMembers;
+  const setPendingNewMembers = newMemberSetPendingNewMembers;
   
   // クリップボード機能
   const { copyToClipboard, pasteFromClipboard } = useClipboard();
+
+  // 競合解決機能
+  const conflictResolution = useConflictResolution({
+    drillId: pageState.metadata.drillDbId,
+    onConflictDetected: (conflict) => {
+      console.warn("[Conflict] Conflict detected:", conflict);
+      addGlobalNotification({
+        type: "warning",
+        message: "編集の競合が検出されました。最新の状態を取得します。",
+      });
+    },
+    onConflictResolved: (resolved) => {
+      console.log("[Conflict] Conflict resolved:", resolved);
+    },
+  });
+
+  // リアルタイム同期
+  useRealtimeSync({
+    drillId: pageState.metadata.drillDbId || "",
+    enabled: !!pageState.metadata.drillDbId,
+    onMessage: (message) => {
+      console.log("[RealtimeSync] Received message:", message);
+      
+      // ドリル更新メッセージの場合
+      if (message.type === "drill_updated") {
+        // 競合解決を適用
+        const { hasConflict, resolvedData } = conflictResolution.applyRemoteChange(
+          message.data,
+          new Date(message.timestamp).getTime(),
+          { sets, members, title: pageState.metadata.drillTitle, dataName: pageState.metadata.drillDataName }
+        );
+
+        if (hasConflict) {
+          // 競合があった場合は最新の状態を再読み込み
+          // loadDrillFromDatabaseは後で定義されるため、useEffectで呼び出す
+        } else if (resolvedData) {
+          // 競合がなければリモートの変更を適用
+          if (resolvedData.sets) {
+            restoreState(resolvedData.sets, [], currentSetId);
+          }
+          if (resolvedData.members) {
+            setMembers(resolvedData.members);
+          }
+          if (resolvedData.title !== undefined) {
+            setDrillTitle(resolvedData.title);
+          }
+          if (resolvedData.dataName !== undefined) {
+            setDrillDataName(resolvedData.dataName);
+          }
+        }
+      }
+    },
+  });
+  
+  // モバイルビューの検出
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobile = window.innerWidth < 768;
+      setIsMobileView(isMobile);
+    };
+    
+    // 初回チェック
+    checkMobile();
+    
+    // リサイズ時にチェック
+    window.addEventListener("resize", checkMobile);
+    
+    return () => {
+      window.removeEventListener("resize", checkMobile);
+    };
+  }, [setIsMobileView]);
 
   // クライアント側でのみマウントされたことを確認
   useEffect(() => {
@@ -118,18 +232,17 @@ export default function DrillPage() {
     const id = params.get("id");
     
     if (id) {
-      // データベースからドリルを読み込む
-      loadDrillFromDatabase(id);
-      setDrillDbId(id);
+      // データベースからドリルを読み込む（loadDrillFromDatabaseは後で定義されるため、別のuseEffectで呼び出す）
+      pageState.metadata.setDrillDbId(id);
     } else {
       // ローカルストレージからメタデータを読み込み
       const metadata = loadDrillMetadata();
       if (metadata) {
-        setDrillTitle(metadata.title || "");
-        setDrillDataName(metadata.dataName || "");
+        pageState.metadata.setDrillTitle(metadata.title || "");
+        pageState.metadata.setDrillDataName(metadata.dataName || "");
       }
     }
-  }, []);
+  }, [pageState.metadata]);
 
   // レイアウト側の「?」ボタンからヘルプを開くためのイベントリスナー
   useEffect(() => {
@@ -143,122 +256,6 @@ export default function DrillPage() {
       }
     };
   }, []);
-
-  // データベースからドリルを読み込む
-  const loadDrillFromDatabase = async (id: string) => {
-    try {
-      console.log("[Load] Loading drill from database, ID:", id);
-      const response = await fetch(`/api/drills/${id}`);
-      
-      console.log("[Load] Response status:", response.status);
-      console.log("[Load] Response ok:", response.ok);
-      
-      if (!response.ok) {
-        let errorMessage = "Failed to load drill";
-        let errorData: any = {};
-        
-        try {
-          const contentType = response.headers.get("content-type");
-          const isJSON = contentType && contentType.includes("application/json");
-          
-          if (isJSON) {
-            errorData = await response.json();
-            errorMessage = errorData.error || errorData.message || errorMessage;
-            console.error("[Load] Error response:", JSON.stringify(errorData, null, 2));
-            console.error("[Load] Error message:", errorData.message);
-            console.error("[Load] Error details:", errorData.details);
-          } else {
-            const text = await response.text();
-            console.error("[Load] Error response text:", text.substring(0, 500));
-            errorMessage = text || `HTTP ${response.status}: ${response.statusText}`;
-          }
-        } catch (e) {
-          console.error("[Load] Failed to parse error response:", e);
-          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        }
-        
-        throw new Error(errorMessage);
-      }
-      
-      const data = await response.json();
-      console.log("[Load] Drill data received:", {
-        id: data.id,
-        title: data.title,
-        setsCount: data.sets?.length || 0,
-        membersCount: data.members?.length || 0,
-      });
-      
-      if (!data.sets || !Array.isArray(data.sets)) {
-        throw new Error("Invalid drill data: sets is missing or not an array");
-      }
-      
-      if (!data.members || !Array.isArray(data.members)) {
-        throw new Error("Invalid drill data: members is missing or not an array");
-      }
-      
-      // ドリルデータを復元（SETが0件でも許可）
-      const firstSetId = data.sets[0]?.id || "";
-      restoreState(data.sets, [], firstSetId);
-      setMembers(data.members);
-      setDrillTitle(data.title || "");
-      setDrillDataName(data.dataName || "");
-      console.log("[Load] Drill loaded successfully");
-    } catch (error) {
-      console.error("[Load] Error loading drill from database:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error("[Load] Full error:", error);
-      alert(`ドリルの読み込みに失敗しました: ${errorMessage}`);
-    }
-  };
-
-  // データベースにドリルを保存
-  const saveDrillToDatabase = async () => {
-    try {
-      const payload = {
-        title: drillTitle || "無題",
-        dataName: drillDataName || "",
-        sets,
-        members,
-      };
-
-      if (drillDbId) {
-        // 既存のドリルを更新
-        const response = await fetch(`/api/drills/${drillDbId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to update drill");
-        }
-      } else {
-        // 新規ドリルを作成
-        const response = await fetch("/api/drills", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to create drill");
-        }
-
-        const data = await response.json();
-        setDrillDbId(data.id);
-        
-        // URLを更新（リロードしない）
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.set("id", data.id);
-        window.history.pushState({}, "", newUrl.toString());
-      }
-
-      alert("データベースに保存しました");
-    } catch (error) {
-      console.error("Error saving drill to database:", error);
-      alert("データベースへの保存に失敗しました");
-    }
-  };
 
   // メニューグループを登録（後で定義されるmenuGroupsを使用）
 
@@ -287,6 +284,9 @@ export default function DrillPage() {
     handleChangeSetName,
     copySet,
     copySelectedMembers,
+    duplicateSet,
+    addIntermediatePoint,
+    removeIntermediatePoint,
     arrangeLineSelected,
     arrangeLineBySelectionOrder,
     reorderSelection,
@@ -318,6 +318,35 @@ export default function DrillPage() {
   const currentSetId = drillCurrentSetId;
   const setCurrentSetId = drillSetCurrentSetId;
   const selectedIds = drillSelectedIds;
+
+  // データベース操作（restoreStateが定義された後に呼び出す）
+  const { loadDrillFromDatabase, saveDrillToDatabase } = useDrillDatabase({
+    drillDbId: pageState.metadata.drillDbId,
+    setDrillDbId: pageState.metadata.setDrillDbId,
+    drillTitle: pageState.metadata.drillTitle,
+    drillDataName: pageState.metadata.drillDataName,
+    setDrillTitle: pageState.metadata.setDrillTitle,
+    setDrillDataName: pageState.metadata.setDrillDataName,
+    sets,
+    members,
+    restoreState,
+    setMembers,
+  });
+
+  // イベントハンドラーを集約（handleSelectBulkが定義された後に呼び出す）
+  const handlers = useDrillPageHandlers({
+    selectedIds,
+    sets,
+    currentSetId,
+    members,
+    settings,
+    restoreState,
+    setMembers,
+    handleSelectBulk,
+    clampAndSnap,
+    copyToClipboard,
+    pasteFromClipboard,
+  });
 
   // ===== 個別配置モード =====
   const {
@@ -415,6 +444,7 @@ export default function DrillPage() {
   // 3Dプレビューのref
   const preview3DRef = useRef<Drill3DPreviewRef>(null);
   const lastSyncedCountRef = useRef<number | null>(null);
+  const prevSetIdRef = useRef<string>("");
 
   // 音楽同期（再生・マーカー管理のみ利用。テンポ同期は現状オフ）
   const {
@@ -428,17 +458,29 @@ export default function DrillPage() {
     getCountFromMusicTime,
     getMusicTimeFromCount,
     setBPM,
+    setPlaybackRate,
+    setPlaybackRateFromBPM,
+    addTrack,
+    removeTrack,
+    setTrackVolume,
+    setTrackEnabled,
+    setAutoSync,
     syncCurrentTime,
     seekToCount,
     seekToMusicTime,
   } = useMusicSync();
 
   // 再生開始（カウント範囲ベース。セットIDベースの指定があればそれも併用）
-  const handleStartPlay = () => {
+  const handleStartPlay = (customStartCount?: number, customEndCount?: number, customLoop?: boolean) => {
     if (!sets.length) return;
 
-    const startCount = Math.max(0, Math.round(playRangeStartCount));
-    const endCount = Math.max(startCount + 1, Math.round(playRangeEndCount));
+    const startCount = customStartCount !== undefined 
+      ? Math.max(0, Math.round(customStartCount))
+      : Math.max(0, Math.round(playRangeStartCount));
+    const endCount = customEndCount !== undefined
+      ? Math.max(startCount + 1, Math.round(customEndCount))
+      : Math.max(startCount + 1, Math.round(playRangeEndCount));
+    const shouldLoop = customLoop !== undefined ? customLoop : loopRangeEnabled;
 
     // 音源が読み込まれていて、マーカーが1つ以上ある場合は音楽同期モードを有効化
     const shouldUseMusicSync = musicState.isLoaded && musicState.markers.length > 0;
@@ -469,6 +511,11 @@ export default function DrillPage() {
         playMusic();
       }
       startPlayByCountRange(startCount, endCount);
+    }
+
+    // ループ設定を更新
+    if (customLoop !== undefined) {
+      setLoopRangeEnabled(customLoop);
     }
   };
 
@@ -602,6 +649,38 @@ export default function DrillPage() {
     }
   }, [currentCount, hasPlayback, getSetForCount, currentSetId, setCurrentSetId]);
 
+  // モバイル表示で現在のセットが変更されたときに、再生範囲を自動的に更新
+  useEffect(() => {
+    if (!isMobileView) return;
+
+    // currentSetIdが変更された場合のみ実行（無限ループを防ぐ）
+    if (prevSetIdRef.current === currentSetId) return;
+    prevSetIdRef.current = currentSetId;
+
+    const currentSetForRange = sets.find((s) => s.id === currentSetId);
+    if (!currentSetForRange) return;
+
+    const startCount = Math.round(currentSetForRange.startCount);
+    // endCountを計算（positionsByCountの最大カウント、または次のセットのstartCount - 1）
+    let endCount = startCount;
+    if (currentSetForRange.positionsByCount) {
+      const counts = Object.keys(currentSetForRange.positionsByCount).map(Number);
+      if (counts.length > 0) {
+        endCount = Math.max(...counts);
+      }
+    }
+    // 次のセットがある場合は、そのstartCount - 1まで
+    const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+    const currentIndex = sortedSets.findIndex((s) => s.id === currentSetId);
+    if (currentIndex < sortedSets.length - 1) {
+      const nextSet = sortedSets[currentIndex + 1];
+      endCount = Math.max(endCount, Math.round(nextSet.startCount) - 1);
+    }
+
+    setPlayRangeStartCount(startCount);
+    setPlayRangeEndCount(endCount);
+  }, [isMobileView, currentSetId, sets]);
+
   // 未保存の位置変更がある場合のページ遷移警告
   useEffect(() => {
     if (pendingPositions && !isPlaying) {
@@ -697,6 +776,7 @@ export default function DrillPage() {
     handleExportPDF,
     handlePrint,
     handleExportOptionsConfirm,
+    progress: exportProgress,
   } = useDrillExport({
     sets,
     currentSet,
@@ -712,237 +792,14 @@ export default function DrillPage() {
     },
   });
 
-  // コピー機能（選択メンバーの位置をクリップボードに保存）
-  const handleCopy = useCallback(() => {
-    if (selectedIds.length === 0) {
-      addGlobalNotification({
-        type: "warning",
-        message: "コピーするメンバーを選択してください",
-      });
-      return;
-    }
-
-    const currentSet = sets.find((s) => s.id === currentSetId);
-    if (!currentSet) return;
-
-    const positionsToCopy: Record<string, WorldPos> = {};
-    selectedIds.forEach((id) => {
-      if (currentSet.positions[id]) {
-        positionsToCopy[id] = { ...currentSet.positions[id] };
-      }
-    });
-
-    copyToClipboard({
-      type: "members",
-      positions: positionsToCopy,
-      memberIds: selectedIds,
-    });
-
-    addGlobalNotification({
-      type: "success",
-      message: `${selectedIds.length}個のメンバーをコピーしました`,
-    });
-  }, [selectedIds, sets, currentSetId, copyToClipboard]);
-
-  // ペースト機能（クリップボードから位置を貼り付け）
-  const handlePaste = useCallback(() => {
-    const clipboardData = pasteFromClipboard();
-    if (!clipboardData || clipboardData.type !== "members") {
-      addGlobalNotification({
-        type: "warning",
-        message: "クリップボードにコピーされたデータがありません",
-      });
-      return;
-    }
-
-    if (clipboardData.memberIds.length === 0) {
-      addGlobalNotification({
-        type: "warning",
-        message: "コピーされたデータにメンバーが含まれていません",
-      });
-      return;
-    }
-
-    // 現在のセットに位置を貼り付け
-    const updatedSets = sets.map((set) => {
-      if (set.id !== currentSetId) return set;
-      return {
-        ...set,
-        positions: {
-          ...set.positions,
-          ...clipboardData.positions,
-        },
-      };
-    });
-
-    restoreState(updatedSets, clipboardData.memberIds, currentSetId);
-    addGlobalNotification({
-      type: "success",
-      message: `${clipboardData.memberIds.length}個のメンバーを貼り付けました`,
-    });
-  }, [sets, currentSetId, pasteFromClipboard, restoreState]);
-
-  // ★ Pythonバックエンドを使ったフォーメーション自動生成
-  const handleAutoGenerateFormation = useCallback(
-    async (shape: "circle" | "line" | "v" | "grid" | "auto" = "auto") => {
-      const targetIds = selectedIds.length > 0 ? selectedIds : members.map((m) => m.id);
-      if (targetIds.length === 0) {
-        addGlobalNotification({
-          type: "warning",
-          message: "フォーメーションを自動生成するメンバーを選択してください",
-        });
-        return;
-      }
-
-      // 形状のデフォルト選択
-      let shapeToUse: "circle" | "line" | "v" | "grid" = "circle";
-      if (shape === "auto") {
-        // 人数が多いときはグリッド、小さいときは円形にする簡易ロジック
-        shapeToUse = targetIds.length >= 24 ? "grid" : "circle";
-      } else {
-        shapeToUse = shape;
-      }
-
-      try {
-        const partDistribution: Record<string, number> = {};
-        members.forEach((m) => {
-          if (!partDistribution[m.part]) partDistribution[m.part] = 0;
-          partDistribution[m.part] += 1;
-        });
-
-        const payload = {
-          member_count: targetIds.length,
-          part_distribution: partDistribution,
-          shape: shapeToUse,
-          constraints: {
-            fieldWidth: settings.fieldWidth,
-            fieldHeight: settings.fieldHeight,
-          },
-        };
-
-        const resp = await fetch("/api/formation/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (!resp.ok) {
-          const text = await resp.text();
-          console.error("[auto-formation] API error:", resp.status, text);
-          addGlobalNotification({
-            type: "error",
-            message: "フォーメーション自動生成APIでエラーが発生しました",
-          });
-          return;
-        }
-
-        const data: {
-          positions: { x: number; y: number; member_index: number }[];
-        } = await resp.json();
-
-        if (!data.positions || data.positions.length === 0) {
-          addGlobalNotification({
-            type: "warning",
-            message: "自動生成結果が空でした",
-          });
-          return;
-        }
-
-        // 現在のSETに結果を適用
-        const updatedSets = sets.map((set) => {
-          if (set.id !== currentSetId) return set;
-
-          const newPositions = { ...set.positions };
-          data.positions.forEach((p) => {
-            const id = targetIds[p.member_index];
-            if (!id) return;
-            newPositions[id] = clampAndSnap({ x: p.x, y: p.y });
-          });
-
-          return {
-            ...set,
-            positions: newPositions,
-          };
-        });
-
-        restoreState(updatedSets, targetIds, currentSetId);
-
-        addGlobalNotification({
-          type: "success",
-          message: `フォーメーションを自動生成しました（${shapeToUse} / ${targetIds.length}人）`,
-        });
-      } catch (error) {
-        console.error("[auto-formation] Unexpected error:", error);
-        addGlobalNotification({
-          type: "error",
-          message: "フォーメーション自動生成中にエラーが発生しました",
-        });
-      }
-    },
-    [selectedIds, members, settings.fieldWidth, settings.fieldHeight, sets, currentSetId, clampAndSnap, restoreState]
-  );
-
-  // 削除機能（選択メンバーをドリル全体から削除）
-  const handleDelete = useCallback(() => {
-    if (selectedIds.length === 0) {
-      addGlobalNotification({
-        type: "warning",
-        message: "削除するメンバーを選択してください",
-      });
-      return;
-    }
-
-    const ok = window.confirm(
-      `選択中のメンバー（${selectedIds.length}人）を削除します。\n` +
-      `このドリル内のすべてのセットから、これらのメンバーの位置情報が削除されます。\n\n` +
-      `本当に削除してもよろしいですか？`
-    );
-    if (!ok) return;
-
-    // メンバーリストからも削除
-    setMembers((prev) => prev.filter((m) => !selectedIds.includes(m.id)));
-
-    // すべてのセットから、該当メンバーの位置情報を削除
-    const updatedSets = sets.map((set) => {
-      const newPositions = { ...set.positions };
-      selectedIds.forEach((id) => {
-        delete newPositions[id];
-      });
-
-      let newPositionsByCount = set.positionsByCount;
-      if (set.positionsByCount) {
-        const updatedByCount: typeof set.positionsByCount = {};
-        Object.entries(set.positionsByCount).forEach(([countKey, posMap]) => {
-          const newMap = { ...posMap };
-          selectedIds.forEach((id) => {
-            delete newMap[id];
-          });
-          // 全て消えたカウントはスキップ
-          if (Object.keys(newMap).length > 0) {
-            updatedByCount![Number(countKey)] = newMap;
-          }
-        });
-        newPositionsByCount = updatedByCount;
-      }
-
-      return {
-        ...set,
-        positions: newPositions,
-        positionsByCount: newPositionsByCount,
-      };
-    });
-
-    restoreState(updatedSets, [], currentSetId);
-    addGlobalNotification({
-      type: "success",
-      message: `${selectedIds.length}個のメンバーを削除しました`,
-    });
-  }, [selectedIds, sets, currentSetId, restoreState, setMembers]);
-
-  // 全選択解除
-  const handleDeselectAll = useCallback(() => {
-    handleSelectBulk([]);
-  }, [handleSelectBulk]);
+  // イベントハンドラーは useDrillPageHandlers から取得
+  const {
+    handleCopy,
+    handlePaste,
+    handleDelete,
+    handleDeselectAll,
+    handleAutoGenerateFormation,
+  } = handlers;
 
   // タイムラインやダブルクリックから「このカウントにSETマーカーを打つ / 既存SETを削除」
   const handleToggleSetAtCount = useCallback(
@@ -1593,6 +1450,7 @@ export default function DrillPage() {
   const menuGroups = [
     {
       label: "ファイル",
+      icon: "📁",
       items: [
         {
           label: "ドリルを新規作成",
@@ -1660,6 +1518,7 @@ export default function DrillPage() {
     },
     {
       label: "編集",
+      icon: "✏️",
       items: [
         {
           label: "元に戻す",
@@ -1692,6 +1551,7 @@ export default function DrillPage() {
     },
     {
       label: "エクスポート",
+      icon: "📤",
       items: [
         {
           label: "PNG画像",
@@ -2170,7 +2030,36 @@ export default function DrillPage() {
     if (count !== null) {
       setCountFromMusic(count);
     }
-  }, [isPlaying, musicState.isLoaded, musicState.isPlaying, musicState.currentTime, musicState.markers, getCountFromMusicTime, setCountFromMusic]);
+
+    // 自動シンク機能: マーカーに合わせてセットを切り替え
+    if (musicState.autoSyncEnabled && musicState.markers.length > 0) {
+      const currentMusicTime = musicState.currentTime;
+      const sortedMarkers = [...musicState.markers].sort((a, b) => a.musicTime - b.musicTime);
+      
+      // 現在の音楽時間に最も近いマーカーを探す
+      let closestMarker = sortedMarkers[0];
+      let minDistance = Math.abs(sortedMarkers[0].musicTime - currentMusicTime);
+      
+      for (const marker of sortedMarkers) {
+        const distance = Math.abs(marker.musicTime - currentMusicTime);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestMarker = marker;
+        }
+      }
+      
+      // マーカーのカウントに対応するセットを探す
+      const targetCount = Math.round(closestMarker.count);
+      const targetSet = sets.find((s) => {
+        const setStartCount = Math.round(s.startCount);
+        return targetCount >= setStartCount && targetCount < setStartCount + 8;
+      });
+      
+      if (targetSet && targetSet.id !== currentSetId) {
+        setCurrentSetId(targetSet.id);
+      }
+    }
+  }, [isPlaying, musicState.isLoaded, musicState.isPlaying, musicState.currentTime, musicState.markers, musicState.autoSyncEnabled, getCountFromMusicTime, setCountFromMusic, sets, currentSetId, setCurrentSetId]);
 
   // キーボード操作（Undo/Redo + Ctrl+A + 矢印キー）
   useEffect(() => {
@@ -2449,7 +2338,7 @@ export default function DrillPage() {
                 </h2>
                 {/* 再生・停止ボタン */}
                 <button
-                  onClick={isPlaying ? handleStopPlay : handleStartPlay}
+                  onClick={() => isPlaying ? handleStopPlay() : handleStartPlay()}
                   disabled={isRecording3D}
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors shadow-md ${
                     isPlaying
@@ -2517,7 +2406,7 @@ export default function DrillPage() {
         onClose={() => {
           setExportDialogOpen(false);
         }}
-        onConfirm={(options) => handleExportOptionsConfirm(options, drillDataName)}
+        onConfirm={(options) => handleExportOptionsConfirm(options, pageState.metadata.drillDataName)}
         sets={sets}
         allowSetSelection={pendingExportType === "pdf" || pendingExportType === "print" || pendingExportType === "image"}
         onPreview={pendingExportType === "print" ? handlePreview : undefined}
@@ -2542,14 +2431,21 @@ export default function DrillPage() {
       <MetadataDialog
         isOpen={isMetadataDialogOpen}
         onClose={() => setIsMetadataDialogOpen(false)}
-        title={drillTitle}
-        dataName={drillDataName}
+        title={pageState.metadata.drillTitle}
+        dataName={pageState.metadata.drillDataName}
         onSave={(title, dataName) => {
-          setDrillTitle(title);
-          setDrillDataName(dataName);
+          pageState.metadata.setDrillTitle(title);
+          pageState.metadata.setDrillDataName(dataName);
           saveDrillMetadata({ title, dataName });
         }}
       />
+      
+      {/* オンボーディングチュートリアル */}
+      <OnboardingTutorial
+        onComplete={() => {}}
+        onSkip={() => {}}
+      />
+
       <FileDropZone
         onImport={(data) => {
           // ドリルデータをインポート
@@ -2561,11 +2457,104 @@ export default function DrillPage() {
           }
         }}
       >
-        <div className="relative h-screen bg-slate-900 text-slate-100 flex flex-col overflow-hidden">
-        {/* メインコンテンツエリア（flex、高さ固定） */}
-        <div className="flex-1 flex gap-3 overflow-hidden px-3 py-3 max-md:px-1 max-md:py-1">
+        {/* モバイルビュー */}
+        {isMobileView ? (
+          <MobileView
+            sets={sets}
+            currentSet={currentSet}
+            currentSetId={currentSetId}
+            members={members}
+            selectedIds={selectedIds}
+            isPlaying={isPlaying}
+            displayPositions={displayPositions}
+            activeArc={activeArc}
+            canvasScale={canvasScale}
+            lineEditState={lineEditState}
+            boxEditState={boxEditState}
+            settings={{
+              showPaths: settings.showPaths,
+              showCollisions: settings.showCollisions,
+              pathSmoothing: settings.pathSmoothing,
+            }}
+            onToggleSet={(setId) => {
+              if (pendingPositions) {
+                const confirmed = window.confirm(
+                  '位置を変更しましたが、まだ保存していません。\n' +
+                  'このままSETを変更すると、変更が失われます。\n\n' +
+                  'OKを押すと変更を破棄してSETを変更します。\n' +
+                  'キャンセルを押すとSET変更を中止します。'
+                );
+                if (!confirmed) return;
+                setPendingPositions(null);
+              }
+              clearPlaybackView();
+              drillSetCurrentSetId(setId);
+            }}
+            onToggleSelect={handleToggleSelectWrapped}
+            onStartPlay={handleStartPlay}
+            onStopPlay={handleStopPlay}
+            onShowFullView={() => pageState.ui.setIsMobileView(false)}
+            onMoveMember={handleMoveWrapped}
+            onUpdateArcPoint={handleUpdateArcPoint}
+            onMoveArcGroup={handleMoveArcGroup}
+            onRectSelect={handleSelectBulkWrapped}
+            clampAndSnap={clampAndSnap}
+            onRotateSelected={(center, angle) => {
+              if (selectedIds.length >= 2) {
+                rotateSelected(center, angle);
+              }
+            }}
+            onUpdateLineEdit={handleUpdateLineEdit}
+            onUpdateBoxEdit={handleUpdateBoxEdit}
+            onAddIntermediatePoint={(memberId, count, position) => {
+              addIntermediatePoint(memberId, count, position);
+            }}
+            onRemoveIntermediatePoint={(memberId, count) => {
+              removeIntermediatePoint(memberId, count);
+            }}
+            onQuickDelete={handleDelete}
+            onQuickCopy={handleCopy}
+            onQuickArrangeLine={arrangeLineSelected}
+            onQuickDeselectAll={handleDeselectAll}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
+            onArrangeCircle={arrangeCircle}
+            onArrangeRectangle={arrangeRectangle}
+            onArrangeSpiral={arrangeSpiral}
+            onArrangeBox={arrangeBox}
+            currentCount={currentCount}
+            onAddSetAtCurrent={() => addSetAtCount(currentCount)}
+            onDeleteSet={(id: string) => {
+              if (sets.length <= 1) {
+                alert("最後のセットは削除できません");
+                return;
+              }
+              deleteSet(id);
+            }}
+            onScrub={(count: number) => {
+              if (pendingPositions && !isPlaying) {
+                const confirmed = window.confirm(
+                  '位置を変更しましたが、まだ保存していません。\n' +
+                  'このままカウントを変更すると、変更が失われます。\n\n' +
+                  'OKを押すと変更を破棄してカウントを変更します。\n' +
+                  'キャンセルを押すとカウント変更を中止します。'
+                );
+                if (!confirmed) return;
+                setPendingPositions(null);
+              }
+              clearPlaybackView();
+              handleJumpToCountSafe(count);
+            }}
+          />
+        ) : (
+          <>
+          <div className="relative h-screen bg-slate-900 text-slate-100 flex flex-col overflow-hidden">
+          {/* メインコンテンツエリア（flex、高さ固定） */}
+          <div className="flex-1 flex flex-col md:flex-row gap-2 md:gap-3 overflow-hidden px-1 md:px-3 py-1 md:py-3">
           {/* 左サイドバー（コマンド系） */}
-          <div className="w-64 shrink-0 flex flex-col gap-3 overflow-hidden max-md:hidden">
+          <div className="w-full md:w-64 lg:w-72 shrink-0 flex flex-col gap-2 md:gap-3 overflow-hidden max-md:order-3">
             {/* DrillControls */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl overflow-hidden flex flex-col h-full">
               <DrillControls
@@ -2682,6 +2671,7 @@ export default function DrillPage() {
                 onChangeSetName={handleChangeSetName}
                 onCopySet={copySet}
                 onCopySelectedMembers={copySelectedMembers}
+                onDuplicateSet={duplicateSet}
                 onArrangeLineSelected={arrangeLineSelected}
                 onArrangeLineBySelectionOrder={arrangeLineBySelectionOrder}
                 onReorderSelection={reorderSelection}
@@ -2711,11 +2701,11 @@ export default function DrillPage() {
           </div>
 
           {/* 中央（フィールド） */}
-          <div className="flex-1 flex flex-col gap-3 overflow-hidden items-center max-md:gap-1">
+          <div className="flex-1 flex flex-col gap-3 overflow-hidden items-center max-md:gap-1 max-md:min-h-0 max-md:order-1">
             {/* フィールドキャンバス */}
             <div 
               ref={canvasContainerRef}
-              className="flex-1 rounded-lg overflow-auto border border-slate-700/80 field-canvas-container shadow-xl w-full max-w-[1400px] bg-transparent flex items-center justify-center"
+              className="flex-1 rounded-lg overflow-auto border border-slate-700/80 field-canvas-container shadow-xl w-full max-w-[1400px] bg-transparent flex items-center justify-center max-md:min-h-[300px]"
             >
                 <FieldCanvas
                   ref={canvasRef}
@@ -2745,16 +2735,38 @@ export default function DrillPage() {
                   individualPlacementMode={individualPlacementMode}
                   onPlaceMember={handlePlaceMember}
                   placementQueue={placementQueue}
+                  onDropMemberToField={(memberIds, position) => {
+                    // 複数メンバーを一括配置する場合は、横に並べて配置
+                    const spacing = 2; // 2メートル間隔
+                    memberIds.forEach((id, index) => {
+                      const offset = (index - (memberIds.length - 1) / 2) * spacing;
+                      const adjustedPos = {
+                        x: position.x + offset,
+                        y: position.y,
+                      };
+                      handleMove(id, adjustedPos);
+                    });
+                  }}
                   lineEditState={lineEditState}
                   onUpdateLineEdit={handleUpdateLineEdit}
                   boxEditState={boxEditState}
                   onUpdateBoxEdit={handleUpdateBoxEdit}
+                  sets={sets}
+                  showPaths={settings.showPaths}
+                  showCollisions={settings.showCollisions}
+                  pathSmoothing={settings.pathSmoothing}
+                  onAddIntermediatePoint={(memberId, count, position) => {
+                    addIntermediatePoint(memberId, count, position);
+                  }}
+                  onRemoveIntermediatePoint={(memberId, count) => {
+                    removeIntermediatePoint(memberId, count);
+                  }}
                 />
             </div>
           </div>
 
           {/* 右サイドバー */}
-          <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto sidebar-scrollbar max-md:hidden">
+          <div className="w-full md:w-64 lg:w-72 shrink-0 flex flex-col gap-2 md:gap-3 overflow-y-auto sidebar-scrollbar max-md:order-2 max-md:max-h-[300px]">
             {/* SidePanel（メンバー選択・管理） */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl overflow-hidden flex flex-col shrink-0">
               <DrillSidePanel
@@ -2791,8 +2803,8 @@ export default function DrillPage() {
                 }}
                 onAddMultipleMembers={(newMembers) => {
                   if (settings.memberAddMode === "careful") {
-                    setPendingNewMembers(newMembers as Member[]);
-                    setIsLayoutModalOpen(true);
+                    pageState.newMember.setPendingNewMembers(newMembers as Member[]);
+                    pageState.ui.setIsLayoutModalOpen(true);
                   } else {
                     setMembers((prev) => [...prev, ...(newMembers as Member[])]);
                   }
@@ -2814,6 +2826,14 @@ export default function DrillPage() {
                 }}
                 onImportMembers={(importedMembers) => {
                   setMembers(() => importedMembers);
+                }}
+                onReorderMembers={(fromIndex, toIndex) => {
+                  setMembers((prev) => {
+                    const newMembers = [...prev];
+                    const [movedMember] = newMembers.splice(fromIndex, 1);
+                    newMembers.splice(toIndex, 0, movedMember);
+                    return newMembers;
+                  });
                 }}
               />
               {/* 位置確定ボタン */}
@@ -3042,7 +3062,7 @@ export default function DrillPage() {
               />
             </div>
 
-            {/* 音楽同期パネル */}
+            {/* 音楽同期パネル（基本） */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-4 shadow-xl">
               <MusicSyncPanel
                 isLoaded={musicState.isLoaded}
@@ -3065,12 +3085,48 @@ export default function DrillPage() {
               />
             </div>
 
+            {/* 音楽同期パネル（高度設定） */}
+            {musicState.isLoaded && (
+              <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-4 shadow-xl">
+                <AdvancedMusicSyncPanel
+                  isLoaded={musicState.isLoaded}
+                  isPlaying={musicState.isPlaying}
+                  currentTime={musicState.currentTime}
+                  duration={musicState.duration}
+                  markers={musicState.markers}
+                  bpm={musicState.bpm}
+                  playbackRate={musicState.playbackRate}
+                  tracks={musicState.tracks}
+                  autoSyncEnabled={musicState.autoSyncEnabled}
+                  fileName={musicState.fileName}
+                  onLoadMusic={loadMusic}
+                  onPlayMusic={playMusic}
+                  onStopMusic={stopMusic}
+                  onAddMarker={addMarker}
+                  onRemoveMarker={removeMarker}
+                  onUpdateMarker={updateMarker}
+                  onSetBPM={setBPM}
+                  onSetPlaybackRate={setPlaybackRate}
+                  onSetPlaybackRateFromBPM={setPlaybackRateFromBPM}
+                  onAddTrack={addTrack}
+                  onRemoveTrack={removeTrack}
+                  onSetTrackVolume={setTrackVolume}
+                  onSetTrackEnabled={setTrackEnabled}
+                  onSetAutoSync={setAutoSync}
+                  onSyncCurrentTime={syncCurrentTime}
+                  currentCount={currentCount}
+                  playbackBPM={playbackBPM}
+                  onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
+                />
+              </div>
+            )}
+
             {/* 学習・提案パネル */}
             <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
               <LearningPanel
                 sets={sets}
                 members={members}
-                drillTitle={drillTitle}
+                drillTitle={pageState.metadata.drillTitle}
                 onSaveDrill={() => {
                   addGlobalNotification({
                     type: "success",
@@ -3088,13 +3144,93 @@ export default function DrillPage() {
 
             {/* 統計・分析パネル（設定で表示/非表示を切り替え可能） */}
             {settings.showStatistics && (
-              <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
-                <StatisticsPanel
-                  sets={sets}
-                  members={members}
-                  playbackBPM={playbackBPM}
-                />
-              </div>
+              <>
+                <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+                  <StatisticsPanel
+                    sets={sets}
+                    members={members}
+                    playbackBPM={playbackBPM}
+                  />
+                </div>
+                <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+                  <PerformanceDashboard
+                    sets={sets}
+                    members={members}
+                    playbackBPM={playbackBPM}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* パス可視化パネル */}
+            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+              <PathVisualizationPanel
+                showPaths={settings.showPaths}
+                showCollisions={settings.showCollisions}
+                pathSmoothing={settings.pathSmoothing}
+                onToggleShowPaths={() => {
+                  updateSettings({ showPaths: !settings.showPaths });
+                }}
+                onToggleShowCollisions={() => {
+                  updateSettings({ showCollisions: !settings.showCollisions });
+                }}
+                onTogglePathSmoothing={() => {
+                  updateSettings({ pathSmoothing: !settings.pathSmoothing });
+                }}
+              />
+            </div>
+
+            {/* 共同編集パネル（データベースに保存されている場合のみ表示） */}
+            {pageState.metadata.drillDbId && session?.user && (
+              <>
+                {/* 共同編集者管理 */}
+                <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+                  <CollaboratorsPanel
+                    drillId={pageState.metadata.drillDbId}
+                    isOwner={true} // TODO: 実際のオーナーチェックを実装
+                  />
+                </div>
+
+                {/* コメントパネル */}
+                <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+                  <CommentsPanel drillId={pageState.metadata.drillDbId} />
+                </div>
+
+                {/* 変更履歴パネル */}
+                <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
+                  <ChangeHistoryPanel
+                    drillId={pageState.metadata.drillDbId}
+                    onRevert={async (historyId: string) => {
+                      try {
+                        const response = await fetch(`/api/drills/${pageState.metadata.drillDbId}/history/${historyId}/revert`, {
+                          method: "POST",
+                        });
+                        if (response.ok) {
+                          addGlobalNotification({
+                            type: "success",
+                            message: "変更を元に戻しました",
+                          });
+                          // ドリルを再読み込み
+                          if (pageState.metadata.drillDbId) {
+                            await loadDrillFromDatabase(pageState.metadata.drillDbId);
+                          }
+                        } else {
+                          addGlobalNotification({
+                            type: "error",
+                            message: "変更の元に戻しに失敗しました",
+                          });
+                        }
+                      } catch (error) {
+                        console.error("Failed to revert history:", error);
+                        addGlobalNotification({
+                          type: "error",
+                          message: "変更の元に戻しに失敗しました",
+                        });
+                      }
+                    }}
+                  />
+                </div>
+              </>
             )}
 
             {/* WebM → MP4変換パネル（一時的に非表示：ffmpeg.wasmがNext.js 16/Turbopackと互換性の問題あり） */}
@@ -3106,6 +3242,16 @@ export default function DrillPage() {
 
         {/* タイムライン（固定、下部） */}
         <div className="flex-shrink-0 border-t border-slate-800/80 bg-gradient-to-br from-slate-900/95 to-slate-950/95 backdrop-blur-sm z-10 px-3 py-3 shadow-2xl max-md:px-1 max-md:py-1">
+          {/* 簡易表示ボタン（モバイルビューに切り替え） */}
+          <div className="flex items-center justify-end mb-2">
+            <button
+              onClick={() => setIsMobileView(true)}
+              className="px-3 py-1.5 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+              title="簡易表示（モバイルビュー）に切り替え"
+            >
+              簡易表示
+            </button>
+          </div>
           <Timeline
             sets={sets.map((s, index) => ({
               id: s.id,
@@ -3155,21 +3301,33 @@ export default function DrillPage() {
             onChangeRangeEnd={handleRangeEndChange}
             loopRangeEnabled={loopRangeEnabled}
             onToggleLoopRange={() => setLoopRangeEnabled((prev) => !prev)}
-            drillTitle={drillTitle}
-            onClickDrillTitle={() => setIsMetadataDialogOpen(true)}
+            drillTitle={pageState.metadata.drillTitle}
+            onClickDrillTitle={() => pageState.ui.setIsMetadataDialogOpen(true)}
           />
         </div>
       </div>
+          </>
+        )}
 
       {/* 保存状態インジケーター */}
       <SaveStatusIndicator
         sets={sets}
         members={members}
-        drillTitle={drillTitle}
-        drillDataName={drillDataName}
-        drillDbId={drillDbId}
+        drillTitle={pageState.metadata.drillTitle}
+        drillDataName={pageState.metadata.drillDataName}
+        drillDbId={pageState.metadata.drillDbId}
         onSaveToDatabase={saveDrillToDatabase}
       />
+      
+      {/* 進捗バー */}
+      {exportProgress && (
+        <ProgressBar
+          progress={exportProgress.progress || 0}
+          message={exportProgress.message}
+          onCancel={exportProgress.cancel}
+          showCancel={(exportProgress.progress || 0) > 0 && (exportProgress.progress || 0) < 100}
+        />
+      )}
       </FileDropZone>
     </>
   );

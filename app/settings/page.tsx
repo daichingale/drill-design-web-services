@@ -204,6 +204,35 @@ export default function SettingsPage() {
             </p>
           </div>
 
+          {/* フォント設定 */}
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-200">
+              フォント
+            </label>
+            <select
+              value={settings.fontFamily}
+              onChange={(e) =>
+                updateSettings({
+                  fontFamily: e.target.value,
+                })
+              }
+              className="w-full max-w-[200px] px-3 py-2 bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 rounded-lg text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-colors"
+              style={{ fontFamily: settings.fontFamily === "system" ? "inherit" : settings.fontFamily }}
+            >
+              <option value="system">システムフォント</option>
+              <option value="'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, 'Noto Sans JP', 'Yu Gothic', 'Yu Gothic Medium', 'MS PGothic', sans-serif">ヒラギノ角ゴ / メイリオ</option>
+              <option value="'Noto Sans JP', sans-serif">Noto Sans JP</option>
+              <option value="'Yu Gothic', 'Yu Gothic Medium', sans-serif">游ゴシック</option>
+              <option value="'MS PGothic', sans-serif">MS Pゴシック</option>
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="'Times New Roman', serif">Times New Roman</option>
+              <option value="'Courier New', monospace">Courier New</option>
+            </select>
+            <p className="text-xs text-slate-400">
+              アプリケーション全体で使用するフォントを選択します
+            </p>
+          </div>
+
           {/* 背景色 */}
           <div className="space-y-3">
             <div className="space-y-2">

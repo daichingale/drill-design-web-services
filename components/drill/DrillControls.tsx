@@ -23,9 +23,11 @@ type Props = {
   onAddSet?: () => void; // オプショナルに変更
   onDeleteSet?: (id: string) => void;
   onReorderSet?: (id: string, direction: 'up' | 'down') => void;
+  onMoveSet?: (fromIndex: number, toIndex: number) => void; // ドラッグ&ドロップ並び替え
   onChangeSetName?: (id: string, name: string) => void; // セット名編集
   onCopySet?: (sourceSetId: string, targetSetId?: string) => void; // セット全体をコピー
   onCopySelectedMembers?: (targetSetId: string) => void; // 選択メンバーのみコピー
+  onDuplicateSet?: (setId: string) => void; // セットを複製
 
   onArrangeLineSelected: () => void;
   onArrangeLineBySelectionOrder?: () => void;
@@ -79,6 +81,7 @@ export default function DrillControls({
   onAddSet,
   onDeleteSet,
   onReorderSet,
+  onMoveSet,
   onChangeSetName,
   onCopySet,
   onCopySelectedMembers,
@@ -327,6 +330,59 @@ export default function DrillControls({
                 ))}
               </select>
             </div>
+
+            {/* ドラッグ&ドロップ可能なセットリスト */}
+            {onMoveSet && sets.length > 1 && (
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400/80 block">セット順序（ドラッグで並び替え）</label>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {sets.map((s, index) => (
+                    <div
+                      key={s.id}
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggedSetIndex(index);
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", s.id);
+                      }}
+                      onDragOver={(e) => {
+                        if (draggedSetIndex !== null && draggedSetIndex !== index) {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          setDragOverSetIndex(index);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        setDragOverSetIndex(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedSetIndex !== null && draggedSetIndex !== index) {
+                          onMoveSet(draggedSetIndex, index);
+                        }
+                        setDraggedSetIndex(null);
+                        setDragOverSetIndex(null);
+                      }}
+                      onDragEnd={() => {
+                        setDraggedSetIndex(null);
+                        setDragOverSetIndex(null);
+                      }}
+                      className={`px-2 py-1.5 rounded text-xs cursor-move transition-all ${
+                        s.id === currentSetId
+                          ? "bg-emerald-600/30 text-emerald-200 border border-emerald-500/50"
+                          : "bg-slate-700/30 text-slate-300 border border-slate-600/30"
+                      } ${
+                        draggedSetIndex === index ? "opacity-50" : ""
+                      } ${
+                        dragOverSetIndex === index ? "border-emerald-500 border-2 bg-slate-600/50" : ""
+                      }`}
+                    >
+                      <span className="font-mono">{s.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* セット名編集 */}
             {onChangeSetName && (
@@ -775,3 +831,4 @@ export default function DrillControls({
     </div>
   );
 }
+

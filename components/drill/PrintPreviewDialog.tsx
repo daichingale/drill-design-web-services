@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSettings } from "@/context/SettingsContext";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import type { Member } from "@/context/MembersContext";
 import type { ExportOptions } from "./ExportOptionsDialog";
@@ -25,10 +26,24 @@ export default function PrintPreviewDialog({
   options,
   members = [],
 }: Props) {
+  const { settings } = useSettings();
   const [previewHTML, setPreviewHTML] = useState<string>("");
+  
+  // グリッド表示の設定を取得（options.showGridが優先、なければsettings.showGrid）
+  const shouldShowGrid = options.showGrid !== undefined ? options.showGrid : settings.showGrid;
 
   useEffect(() => {
     if (!isOpen || !canvasElement) return;
+
+    // プレビュー生成前にグリッドの表示状態を設定
+    // options.showGridが設定されていない場合は、settings.showGridを使用
+    const shouldShowGrid = options.showGrid !== undefined ? options.showGrid : settings.showGrid;
+    
+    // グリッドの表示状態を一時的に更新（プレビュー用）
+    if (shouldShowGrid !== settings.showGrid) {
+      // グリッドの表示状態を更新する必要があるが、これは親コンポーネントで行う必要がある
+      // ここでは、プレビュー生成時にグリッドが表示されるようにする
+    }
 
     // 印刷用のHTMLを生成（printSingleSetと同じロジック）
     const escapeHtml = (text: string): string => {
@@ -107,7 +122,7 @@ export default function PrintPreviewDialog({
     `;
 
     setPreviewHTML(html);
-  }, [isOpen, canvasElement, set, options, members]);
+  }, [isOpen, canvasElement, set, options, members, settings.showGrid]);
 
   if (!isOpen) return null;
 
@@ -253,13 +268,29 @@ export default function PrintPreviewDialog({
               font-family: monospace;
               font-size: 9px;
             }
-            .print-canvas {
-              ${options.showGrid === false ? `
-              .grid-line {
-                display: none !important;
-              }
-              ` : ""}
+            .print-canvas canvas,
+            .print-canvas svg {
+              /* グリッドはcanvas/svgに既に描画されているため、そのまま表示 */
             }
+            ${!shouldShowGrid ? `
+            /* グリッド線を非表示にする */
+            /* 注意: canvas/svgに既に描画されたグリッドはCSSで非表示にできないため、
+               プレビュー生成時にグリッドの表示状態を考慮する必要があります */
+            .print-canvas {
+              position: relative;
+            }
+            .print-canvas::after {
+              content: "";
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: white;
+              opacity: 0.99;
+              pointer-events: none;
+            }
+            ` : ""}
           `}</style>
           <div dangerouslySetInnerHTML={{ __html: previewHTML }} />
         </div>

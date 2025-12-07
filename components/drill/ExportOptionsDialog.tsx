@@ -99,16 +99,20 @@ export default function ExportOptionsDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="rounded-xl border border-slate-700 bg-slate-800 p-6 w-full max-w-md space-y-4">
-        <h2 className="text-lg font-semibold text-slate-100">
-          エクスポート・印刷オプション
-        </h2>
-        <p className="text-sm text-slate-400">
-          出力に含める項目を選択してください
-        </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="rounded-xl border border-slate-700 bg-slate-800 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+        {/* ヘッダー部分（固定） */}
+        <div className="p-6 pb-4 flex-shrink-0 border-b border-slate-700">
+          <h2 className="text-lg font-semibold text-slate-100">
+            エクスポート・印刷オプション
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">
+            出力に含める項目を選択してください
+          </p>
+        </div>
 
-        <div className="space-y-4">
+        {/* スクロール可能なコンテンツ部分 */}
+        <div className="flex-1 overflow-y-auto p-6 pt-4 space-y-4">
           {/* Set選択（PDF/印刷の場合のみ） */}
           {allowSetSelection && sets.length > 0 && (
             <div className="space-y-2 pb-3 border-b border-slate-700">
@@ -278,7 +282,8 @@ export default function ExportOptionsDialog({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-700">
+        {/* フッター部分（固定） */}
+        <div className="flex items-center justify-end gap-2 p-6 pt-4 border-t border-slate-700 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2 rounded bg-slate-700/30 hover:bg-slate-700/50 text-slate-200 hover:text-slate-100 transition-colors text-sm"

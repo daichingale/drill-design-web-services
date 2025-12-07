@@ -1,0 +1,154 @@
+// hooks/useRealtimeSync.ts
+"use client";
+
+import { useEffect, useRef, useCallback } from "react";
+import { useSession } from "next-auth/react";
+
+type SyncMessage = {
+  type: string;
+  userId: string;
+  data: any;
+  timestamp: string;
+  userName?: string;
+  userColor?: string;
+};
+
+type UseRealtimeSyncOptions = {
+  drillId: string;
+  onMessage?: (message: SyncMessage) => void;
+  enabled?: boolean;
+};
+
+/**
+ * リアルタイム同期フック（Server-Sent Eventsを使用）
+ */
+export function useRealtimeSync({
+  drillId,
+  onMessage,
+  enabled = true,
+}: UseRealtimeSyncOptions) {
+  const { data: session } = useSession();
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 5;
+
+  const connect = useCallback(() => {
+    if (!enabled) {
+      console.log("[RealtimeSync] Sync disabled");
+      return;
+    }
+    
+    if (!drillId) {
+      console.log("[RealtimeSync] No drillId provided, skipping connection");
+      return;
+    }
+    
+    if (!session?.user?.id) {
+      console.log("[RealtimeSync] User not authenticated, skipping connection");
+      return;
+    }
+
+    // 既存の接続を閉じる
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    try {
+      const eventSource = new EventSource(
+        `/api/drills/${drillId}/sync`
+      );
+
+      eventSource.onopen = () => {
+        console.log("[RealtimeSync] Connected");
+        reconnectAttemptsRef.current = 0;
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const message: SyncMessage = JSON.parse(event.data);
+          
+          // 自分の変更は無視（無限ループを防ぐ）
+          if (message.userId === session.user?.id) {
+            return;
+          }
+
+          console.log("[RealtimeSync] Received message:", message);
+          onMessage?.(message);
+        } catch (error) {
+          console.error("[RealtimeSync] Failed to parse message:", error);
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        // EventSourceのエラーは通常、エラーオブジェクトを提供しない
+        const errorInfo = {
+          readyState: eventSource.readyState,
+          readyStateText: eventSource.readyState === EventSource.CONNECTING ? 'CONNECTING' 
+            : eventSource.readyState === EventSource.OPEN ? 'OPEN' 
+            : eventSource.readyState === EventSource.CLOSED ? 'CLOSED' 
+            : 'UNKNOWN',
+          url: eventSource.url,
+          drillId,
+          userId: session?.user?.id,
+          reconnectAttempt: reconnectAttemptsRef.current,
+        };
+        
+        // readyStateが2（CLOSED）の場合は接続が閉じられたことを意味する
+        if (eventSource.readyState === EventSource.CLOSED) {
+          console.warn("[RealtimeSync] Connection closed:", errorInfo);
+        } else {
+          console.error("[RealtimeSync] Connection error:", errorInfo);
+        }
+        
+        eventSource.close();
+
+        // 再接続を試みる（readyStateがCLOSEDでない場合、または最大試行回数に達していない場合）
+        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectAttemptsRef.current++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+          console.log(`[RealtimeSync] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connect();
+          }, delay);
+        } else {
+          console.warn(
+            "[RealtimeSync] Max reconnect attempts reached. Stopping reconnection attempts.",
+            {
+              drillId,
+              url: eventSource.url,
+              readyState: errorInfo.readyStateText,
+              message: "リアルタイム同期機能が使用できません。単独での編集は引き続き可能です。",
+            }
+          );
+        }
+      };
+
+      eventSourceRef.current = eventSource;
+    } catch (error) {
+      console.error("[RealtimeSync] Failed to create EventSource:", error);
+    }
+  }, [drillId, session?.user?.id, enabled, onMessage]);
+
+  useEffect(() => {
+    if (enabled && drillId && session?.user?.id) {
+      connect();
+    }
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
+  }, [enabled, drillId, session?.user?.id, connect]);
+
+  return {
+    reconnect: connect,
+  };
+}
+

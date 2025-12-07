@@ -59,6 +59,14 @@ export type Settings = {
 
   // 統計・分析パネルの表示
   showStatistics: boolean;
+
+  // フォント設定
+  fontFamily: string; // フォントファミリー
+
+  // パス可視化設定
+  showPaths: boolean; // 移動経路を表示
+  showCollisions: boolean; // 衝突検知を表示
+  pathSmoothing: boolean; // パスのスムージング
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -73,6 +81,10 @@ const DEFAULT_SETTINGS: Settings = {
   playbackBPM: 120, // デフォルトBPM
   memberAddMode: "quick",
   showStatistics: false, // デフォルトは非表示
+  fontFamily: "system", // デフォルトはシステムフォント
+  showPaths: false, // デフォルトは非表示
+  showCollisions: false, // デフォルトは非表示
+  pathSmoothing: false, // デフォルトはオフ
 };
 
 const STORAGE_KEY = "drill-settings";
