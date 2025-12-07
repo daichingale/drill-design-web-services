@@ -6,6 +6,7 @@ import { useShortcuts } from "@/context/ShortcutContext";
 import { formatShortcutKey } from "@/hooks/useKeyboardShortcuts";
 import type { ShortcutKey } from "@/hooks/useKeyboardShortcuts";
 import Link from "next/link";
+import BackToDrillButton from "@/components/BackToDrillButton";
 
 type ShortcutDefinition = {
   id: string;
@@ -116,12 +117,15 @@ export default function ShortcutsSettingsPage() {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">
               キーボードショートカット設定
             </h1>
-            <Link
-              href="/settings"
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-white font-medium transition-all duration-200"
-            >
-              設定に戻る
-            </Link>
+            <div className="flex items-center gap-3">
+              <BackToDrillButton />
+              <Link
+                href="/settings"
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-600 hover:to-slate-700 text-white font-medium transition-all duration-200"
+              >
+                設定に戻る
+              </Link>
+            </div>
           </div>
           <p className="text-slate-400">キーボードショートカットをカスタマイズできます。</p>
         </div>

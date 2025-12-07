@@ -123,9 +123,19 @@ export async function POST(
       );
     }
 
-    // ドリルのオーナーのみが共同編集者を追加可能
+    // ドリルのオーナーまたは編集者のみが共同編集者を追加可能
     const drill = await prisma.drill.findUnique({
       where: { id: drillId },
+      include: {
+        collaborators: {
+          where: {
+            userId: user.id,
+          },
+          select: {
+            role: true,
+          },
+        },
+      },
     });
 
     if (!drill) {
@@ -135,9 +145,14 @@ export async function POST(
       );
     }
 
-    if (drill.userId !== user.id) {
+    // オーナーまたは編集者のみが追加可能
+    const isOwner = drill.userId === user.id;
+    const userCollaborator = drill.collaborators[0];
+    const isEditor = userCollaborator?.role === "editor";
+
+    if (!isOwner && !isEditor) {
       return NextResponse.json(
-        { error: "Only the owner can add collaborators" },
+        { error: "Only the owner or editors can add collaborators" },
         { status: 403 }
       );
     }
@@ -275,9 +290,20 @@ export async function DELETE(
       );
     }
 
-    // ドリルのオーナーのみが共同編集者を削除可能
+    // ドリルのオーナーまたは編集者が共同編集者を削除可能
+    // ただし、編集者は他の編集者を削除できない（オーナーのみ可能）
     const drill = await prisma.drill.findUnique({
       where: { id: drillId },
+      include: {
+        collaborators: {
+          where: {
+            userId: user.id,
+          },
+          select: {
+            role: true,
+          },
+        },
+      },
     });
 
     if (!drill) {
@@ -287,9 +313,29 @@ export async function DELETE(
       );
     }
 
-    if (drill.userId !== user.id) {
+    const isOwner = drill.userId === user.id;
+    const userCollaborator = drill.collaborators[0];
+    const isEditor = userCollaborator?.role === "editor";
+
+    // 削除対象の共同編集者を取得
+    const targetCollaborator = await prisma.drillCollaborator.findUnique({
+      where: { id: collaboratorId },
+      select: {
+        role: true,
+      },
+    });
+
+    if (!targetCollaborator) {
       return NextResponse.json(
-        { error: "Only the owner can remove collaborators" },
+        { error: "Collaborator not found" },
+        { status: 404 }
+      );
+    }
+
+    // オーナーは誰でも削除可能、編集者は閲覧者のみ削除可能
+    if (!isOwner && (!isEditor || targetCollaborator.role === "editor")) {
+      return NextResponse.json(
+        { error: "You don't have permission to remove this collaborator" },
         { status: 403 }
       );
     }

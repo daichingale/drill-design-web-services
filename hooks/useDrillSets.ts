@@ -83,7 +83,7 @@ type UseDrillSetsResult = {
   addSetAtCount: (count: number) => void;
   deleteSet: (id: string) => void;
   reorderSet: (id: string, direction: 'up' | 'down') => void;
-  restoreState: (newSets: UiSet[], newSelectedIds: string[], newCurrentSetId: string) => void;
+  restoreState: (newSets: UiSet[], newSelectedIds: string[], newCurrentSetId: string, membersOverride?: Member[]) => void;
   addIntermediatePoint: (memberId: string, count: number, position: WorldPos) => void;
   removeIntermediatePoint: (memberId: string, count: number) => void;
 };
@@ -110,14 +110,18 @@ export function useDrillSets(
 
   // ★ 状態を一括復元する関数
   const restoreState = useCallback(
-    (newSets: UiSet[], newSelectedIds: string[], newCurrentSetId: string) => {
+    (newSets: UiSet[], newSelectedIds: string[], newCurrentSetId: string, membersOverride?: Member[]) => {
+      // membersOverrideが指定されている場合はそれを使用、否则は現在のmembersを使用
+      const membersToUse = membersOverride || members;
+      
       console.log("[restoreState] 状態を復元", {
         setsCount: newSets.length,
         selectedIdsCount: newSelectedIds.length,
         currentSetId: newCurrentSetId,
         firstSetPositionsKeys: newSets[0]?.positions ? Object.keys(newSets[0].positions) : [],
-        membersCount: members.length,
-        memberIds: members.map(m => m.id),
+        membersCount: membersToUse.length,
+        memberIds: membersToUse.map(m => m.id),
+        usingOverride: !!membersOverride,
       });
       
       // 復元するsetsのpositionsを、現在のmembersに合わせてフィルタリング
@@ -128,7 +132,7 @@ export function useDrillSets(
         const filteredPositions: Record<string, WorldPos> = {};
         
         // 現在存在するメンバーの位置情報のみを保持
-        members.forEach(m => {
+        membersToUse.forEach(m => {
           if (set.positions[m.id]) {
             filteredPositions[m.id] = set.positions[m.id];
           }
@@ -146,7 +150,7 @@ export function useDrillSets(
       
       setSets(filteredSets);
       // selectedIdsはフィルタリングするが、Undo/Redoの復元時は選択状態を保持
-      const validSelectedIds = newSelectedIds.filter(id => members.some(m => m.id === id));
+      const validSelectedIds = newSelectedIds.filter(id => membersToUse.some(m => m.id === id));
       setSelectedIds(validSelectedIds);
       setCurrentSetId(newCurrentSetId);
     },

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import type { Member } from "@/context/MembersContext";
 import { requireAuth, AuthError } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { recordChange } from "@/lib/drill/collaboration";
 import { broadcastChange } from "./sync/route";
 
@@ -19,12 +20,16 @@ export async function GET(
     const { id } = await params;
     console.log("[API] GET /api/drills/[id] called, ID:", id, "by user:", user.id);
     
-    // 動的インポートでPrismaクライアントを読み込む（エラーを回避）
-    const { prisma } = await import("@/lib/prisma");
-    console.log("[API] Prisma client imported successfully");
-    
-    const drill = await prisma.drill.findUnique({
-      where: { id, userId: user.id },
+    if (!prisma) {
+      console.error("[API] Prisma client is not initialized");
+      throw new Error("Prisma client is not initialized");
+    }
+
+    // ドリルを取得（idで検索、その後権限チェック）
+    const drill = await prisma.drill.findFirst({
+      where: {
+        id,
+      },
       include: {
         sets: {
           orderBy: { startCount: "asc" },
@@ -32,14 +37,54 @@ export async function GET(
         members: {
           orderBy: { memberId: "asc" },
         },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
       },
     });
 
     if (!drill) {
       console.log("[API] Drill not found, ID:", id);
       return NextResponse.json(
-        { error: "Drill not found" },
+        { error: "Drill not found", message: "指定されたドリルが見つかりません" },
         { status: 404 }
+      );
+    }
+
+    // アクセス権限チェック
+    const isOwner = drill.userId === user.id;
+    
+    // 共同編集者として追加されているか確認
+    let isCollaborator = false;
+    try {
+      if (prisma.drillCollaborator) {
+        const collaborator = await prisma.drillCollaborator.findFirst({
+          where: {
+            drillId: id,
+            userId: user.id,
+          },
+          select: {
+            id: true,
+          },
+        });
+        isCollaborator = !!collaborator;
+        console.log("[API] Collaborator check result:", isCollaborator);
+      }
+    } catch (collabError) {
+      console.error("[API] Error checking collaborator status:", collabError);
+      // エラーが発生した場合は、共同編集者ではないとみなす
+      isCollaborator = false;
+    }
+
+    if (!isOwner && !isCollaborator) {
+      console.log("[API] Access denied, ID:", id, "User:", user.id);
+      return NextResponse.json(
+        { error: "Access denied", message: "このドリルにアクセスする権限がありません" },
+        { status: 403 }
       );
     }
 
@@ -73,6 +118,8 @@ export async function GET(
       id: drill.id,
       title: drill.title,
       dataName: drill.dataName,
+      userId: drill.userId,
+      user: drill.user,
       sets,
       members,
       createdAt: drill.createdAt.toISOString(),
@@ -128,11 +175,17 @@ export async function PUT(
     // Next.js 16では、paramsはPromiseなので、awaitでアンラップする必要がある
     const { id } = await params;
     
-    // 動的インポートでPrismaクライアントを読み込む（エラーを回避）
-    const { prisma } = await import("@/lib/prisma");
     
     const body = await request.json();
     const { title, dataName, sets, members, version, clientTimestamp } = body;
+    
+    console.log("[API] PUT /api/drills/[id] received:", {
+      id,
+      title,
+      setsCount: sets?.length || 0,
+      membersCount: members?.length || 0,
+      memberIds: members?.map((m: any) => m.id) || [],
+    });
 
     // 既存のドリルを取得（ユーザー所有のドリルのみ）
     const existingDrill = await prisma.drill.findUnique({
@@ -197,8 +250,13 @@ export async function PUT(
 
       // メンバーを更新（既存を削除して再作成）
       if (members && Array.isArray(members)) {
+        console.log("[API] Updating members:", {
+          count: members.length,
+          memberIds: members.map((m: Member) => m.id),
+        });
+        
         await tx.member.deleteMany({ where: { drillId: id } });
-        await tx.member.createMany({
+        const createdMembers = await tx.member.createMany({
           data: members.map((member: Member) => ({
             drillId: id,
             memberId: member.id,
@@ -207,6 +265,12 @@ export async function PUT(
             color: member.color || "#888888",
           })),
         });
+        
+        console.log("[API] Members created:", {
+          count: createdMembers.count,
+        });
+      } else {
+        console.warn("[API] Members array is missing or invalid:", members);
       }
 
       return drill;
@@ -277,8 +341,6 @@ export async function DELETE(
     // Next.js 16では、paramsはPromiseなので、awaitでアンラップする必要がある
     const { id } = await params;
     
-    // 動的インポートでPrismaクライアントを読み込む（エラーを回避）
-    const { prisma } = await import("@/lib/prisma");
     
     // ユーザー所有のドリルのみ削除可能
     await prisma.drill.delete({

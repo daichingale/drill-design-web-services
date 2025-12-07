@@ -26,6 +26,7 @@ import type { UiSet } from "@/lib/drill/uiTypes";
 import type { LineEditState, BoxEditState } from "@/types/drillEditor";
 import {
   loadDrillFromLocalStorage,
+  loadMembersFromLocalStorage,
   autoSaveDrill,
   saveDrillMetadata,
   loadDrillMetadata,
@@ -243,6 +244,59 @@ export default function DrillPage() {
       }
     }
   }, [pageState.metadata]);
+  
+  // URLパラメータの変更を監視（ドリル一覧から別のドリルを開いた場合など）
+  const prevDrillDbIdRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    if (!isMounted) return;
+    
+    const handleLocationChange = () => {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("id");
+      const currentDrillId = pageState.metadata.drillDbId;
+      
+      // 実際に変更があった場合のみ更新
+      if (id && id !== currentDrillId && id !== prevDrillDbIdRef.current) {
+        prevDrillDbIdRef.current = id;
+        pageState.metadata.setDrillDbId(id);
+      } else if (!id && currentDrillId) {
+        prevDrillDbIdRef.current = null;
+        pageState.metadata.setDrillDbId(null);
+        const metadata = loadDrillMetadata();
+        if (metadata) {
+          pageState.metadata.setDrillTitle(metadata.title || "");
+          pageState.metadata.setDrillDataName(metadata.dataName || "");
+        }
+      }
+    };
+    
+    // 初回チェック
+    handleLocationChange();
+    
+    // popstateイベント（ブラウザの戻る/進む）を監視
+    window.addEventListener("popstate", handleLocationChange);
+    
+    // pushState/replaceStateを監視するため、History APIをオーバーライド
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    history.pushState = function(...args) {
+      originalPushState.apply(history, args);
+      setTimeout(handleLocationChange, 0);
+    };
+    
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(history, args);
+      setTimeout(handleLocationChange, 0);
+    };
+    
+    return () => {
+      window.removeEventListener("popstate", handleLocationChange);
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
+    };
+  }, [isMounted, pageState.metadata.drillDbId, pageState.metadata.setDrillDbId, pageState.metadata.setDrillTitle, pageState.metadata.setDrillDataName]);
 
   // レイアウト側の「?」ボタンからヘルプを開くためのイベントリスナー
   useEffect(() => {
@@ -332,6 +386,53 @@ export default function DrillPage() {
     restoreState,
     setMembers,
   });
+
+  // drillDbIdが変更されたときにドリルを読み込む
+  const prevDrillIdRef = useRef<string | null>(null);
+  const loadDrillFromDatabaseRef = useRef(loadDrillFromDatabase);
+  
+  // 最新の関数を保持
+  useEffect(() => {
+    loadDrillFromDatabaseRef.current = loadDrillFromDatabase;
+  }, [loadDrillFromDatabase]);
+  
+  useEffect(() => {
+    if (!isMounted) return;
+    
+    const drillId = pageState.metadata.drillDbId;
+    
+    // 実際に変更があった場合のみ実行
+    if (drillId === prevDrillIdRef.current) return;
+    prevDrillIdRef.current = drillId;
+    
+    if (drillId) {
+      console.log("[DrillPage] Loading drill from database, ID:", drillId);
+      loadDrillFromDatabaseRef.current(drillId);
+    } else {
+      // ドリルIDがnullの場合、ローカルストレージから読み込む
+      const storedSets = loadDrillFromLocalStorage();
+      const storedMembers = loadMembersFromLocalStorage();
+      
+      if (storedSets && storedSets.length > 0) {
+        console.log("[DrillPage] Loading drill from local storage");
+        restoreState(storedSets, [], storedSets[0]?.id || "");
+      } else {
+        // ローカルストレージにもない場合、セットをクリア
+        console.log("[DrillPage] No drill sets found, clearing sets");
+        restoreState([], [], "");
+      }
+      
+      // メンバーは常にローカルストレージから読み込む（ドリルIDがない場合）
+      if (storedMembers && storedMembers.length > 0) {
+        console.log("[DrillPage] Loading members from local storage");
+        setMembers(storedMembers);
+      } else {
+        // ローカルストレージにもない場合、メンバーをクリア
+        console.log("[DrillPage] No members found, clearing members");
+        setMembers([]);
+      }
+    }
+  }, [pageState.metadata.drillDbId, isMounted, restoreState, setMembers]);
 
   // イベントハンドラーを集約（handleSelectBulkが定義された後に呼び出す）
   const handlers = useDrillPageHandlers({
@@ -1427,7 +1528,14 @@ export default function DrillPage() {
       label: "設定を開く",
       icon: "⚙️",
       group: "settings",
-      action: () => window.location.href = "/settings",
+      action: () => {
+        const drillId = pageState.metadata.drillDbId;
+        if (drillId) {
+          window.location.href = `/settings?id=${drillId}`;
+        } else {
+          window.location.href = "/settings";
+        }
+      },
     },
     {
       id: "shortcut-help",
@@ -1447,6 +1555,10 @@ export default function DrillPage() {
   ];
 
   // ヘッダーメニュー用のグループ
+  // 共有メニューの状態管理
+  const [shareMenuOpen, setShareMenuOpen] = useState<string | null>(null);
+  const [optionsMenuOpen, setOptionsMenuOpen] = useState<string | null>(null);
+
   const menuGroups = [
     {
       label: "ファイル",
@@ -1573,6 +1685,49 @@ export default function DrillPage() {
           icon: "🖨️",
           shortcut: "Ctrl+P",
           action: handlePrint,
+        },
+      ],
+    },
+    {
+      label: "共有",
+      icon: "👥",
+      items: [
+        {
+          label: "共同編集者",
+          icon: "👤",
+          action: () => setShareMenuOpen(shareMenuOpen === "collaborators" ? null : "collaborators"),
+        },
+        {
+          label: "コメント",
+          icon: "💬",
+          action: () => setShareMenuOpen(shareMenuOpen === "comments" ? null : "comments"),
+        },
+        {
+          label: "変更履歴",
+          icon: "📜",
+          action: () => setShareMenuOpen(shareMenuOpen === "history" ? null : "history"),
+        },
+        { divider: true },
+        {
+          label: "共同編集者管理",
+          icon: "⚙️",
+          action: () => window.location.href = `/drills/collaborators?drillId=${pageState.metadata.drillDbId}`,
+        },
+      ],
+    },
+    {
+      label: "オプション",
+      icon: "⚙️",
+      items: [
+        {
+          label: "ベータ機能",
+          icon: "🧪",
+          action: () => setOptionsMenuOpen(optionsMenuOpen === "beta" ? null : "beta"),
+        },
+        {
+          label: "実験的機能",
+          icon: "🔬",
+          action: () => setOptionsMenuOpen(optionsMenuOpen === "experimental" ? null : "experimental"),
         },
       ],
     },
@@ -3180,58 +3335,6 @@ export default function DrillPage() {
               />
             </div>
 
-            {/* 共同編集パネル（データベースに保存されている場合のみ表示） */}
-            {pageState.metadata.drillDbId && session?.user && (
-              <>
-                {/* 共同編集者管理 */}
-                <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
-                  <CollaboratorsPanel
-                    drillId={pageState.metadata.drillDbId}
-                    isOwner={true} // TODO: 実際のオーナーチェックを実装
-                  />
-                </div>
-
-                {/* コメントパネル */}
-                <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
-                  <CommentsPanel drillId={pageState.metadata.drillDbId} />
-                </div>
-
-                {/* 変更履歴パネル */}
-                <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
-                  <ChangeHistoryPanel
-                    drillId={pageState.metadata.drillDbId}
-                    onRevert={async (historyId: string) => {
-                      try {
-                        const response = await fetch(`/api/drills/${pageState.metadata.drillDbId}/history/${historyId}/revert`, {
-                          method: "POST",
-                        });
-                        if (response.ok) {
-                          addGlobalNotification({
-                            type: "success",
-                            message: "変更を元に戻しました",
-                          });
-                          // ドリルを再読み込み
-                          if (pageState.metadata.drillDbId) {
-                            await loadDrillFromDatabase(pageState.metadata.drillDbId);
-                          }
-                        } else {
-                          addGlobalNotification({
-                            type: "error",
-                            message: "変更の元に戻しに失敗しました",
-                          });
-                        }
-                      } catch (error) {
-                        console.error("Failed to revert history:", error);
-                        addGlobalNotification({
-                          type: "error",
-                          message: "変更の元に戻しに失敗しました",
-                        });
-                      }
-                    }}
-                  />
-                </div>
-              </>
-            )}
 
             {/* WebM → MP4変換パネル（一時的に非表示：ffmpeg.wasmがNext.js 16/Turbopackと互換性の問題あり） */}
             {/* <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">

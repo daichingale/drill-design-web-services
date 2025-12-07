@@ -1,16 +1,21 @@
 // components/MenuBar.tsx
 "use client";
 
+import { Suspense } from "react";
 import { useMenu } from "@/context/MenuContext";
 import HeaderMenu from "@/components/drill/HeaderMenu";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslation } from "@/lib/i18n/useTranslation";
 
-export default function MenuBar() {
+function MenuBarInner() {
   const { menuGroups, openCommandPalette } = useMenu();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { t } = useTranslation();
+  
+  // 現在のURLからドリルIDを取得
+  const drillId = searchParams.get("id");
 
   // 常に表示する「表示」メニュー
   const viewMenuGroup = {
@@ -32,14 +37,22 @@ export default function MenuBar() {
         label: t("menu.view.drillEditor"),
         icon: "🎯",
         action: () => {
-          window.location.href = "/drill";
+          if (drillId) {
+            window.location.href = `/drill?id=${drillId}`;
+          } else {
+            window.location.href = "/drill";
+          }
         },
       },
       {
         label: t("menu.view.settings"),
         icon: "⚙️",
         action: () => {
-          window.location.href = "/settings";
+          if (drillId) {
+            window.location.href = `/settings?id=${drillId}`;
+          } else {
+            window.location.href = "/settings";
+          }
         },
       },
     ],
@@ -49,5 +62,13 @@ export default function MenuBar() {
   const allMenuGroups = [...menuGroups, viewMenuGroup];
 
   return <HeaderMenu groups={allMenuGroups} />;
+}
+
+export default function MenuBar() {
+  return (
+    <Suspense fallback={<HeaderMenu groups={[]} />}>
+      <MenuBarInner />
+    </Suspense>
+  );
 }
 

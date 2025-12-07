@@ -1,8 +1,9 @@
 // hooks/useDrillDatabase.ts
 // ドリルのデータベース操作を管理するフック
 
-import { useCallback } from "react";
+import { useCallback, useRef, useEffect } from "react";
 import { addGlobalNotification } from "@/components/ErrorNotification";
+import { saveMembersToLocalStorage } from "@/lib/drill/storage";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import type { Member } from "@/context/MembersContext";
 
@@ -92,10 +93,28 @@ export function useDrillDatabase({
           throw new Error("Invalid drill data: members is missing or not an array");
         }
 
-        // ドリルデータを復元（SETが0件でも許可）
-        const firstSetId = data.sets[0]?.id || "";
-        restoreState(data.sets, [], firstSetId);
+        console.log("[Load] Setting members first:", {
+          membersCount: data.members.length,
+          memberIds: data.members.map((m: Member) => m.id),
+        });
+
+        // メンバーを先に設定
         setMembers(data.members);
+        
+        // ローカルストレージにも最新のメンバーを保存（他のページから戻ってきた時に正しく読み込まれるように）
+        saveMembersToLocalStorage(data.members);
+        console.log("[Load] Saved members to local storage:", {
+          membersCount: data.members.length,
+        });
+        
+        // restoreStateに最新のmembersを直接渡す（クロージャの問題を回避）
+        const firstSetId = data.sets[0]?.id || "";
+        console.log("[Load] Restoring state with members override:", {
+          setsCount: data.sets.length,
+          membersCount: data.members.length,
+        });
+        restoreState(data.sets, [], firstSetId, data.members);
+        
         setDrillTitle(data.title || "");
         setDrillDataName(data.dataName || "");
         console.log("[Load] Drill loaded successfully");
@@ -109,14 +128,41 @@ export function useDrillDatabase({
     [restoreState, setMembers, setDrillTitle, setDrillDataName]
   );
 
+  // 最新の状態を保持するためのref
+  const membersRef = useRef<Member[]>(members);
+  const setsRef = useRef<UiSet[]>(sets);
+  const drillTitleRef = useRef<string>(drillTitle);
+  const drillDataNameRef = useRef<string>(drillDataName);
+  
+  // 最新の状態をrefに反映
+  useEffect(() => {
+    membersRef.current = members;
+    setsRef.current = sets;
+    drillTitleRef.current = drillTitle;
+    drillDataNameRef.current = drillDataName;
+  }, [members, sets, drillTitle, drillDataName]);
+
   // データベースにドリルを保存（競合解決付き）
   const saveDrillToDatabase = useCallback(async () => {
     try {
+      // 最新の状態をrefから取得
+      const currentMembers = membersRef.current;
+      const currentSets = setsRef.current;
+      const currentTitle = drillTitleRef.current;
+      const currentDataName = drillDataNameRef.current;
+      
+      console.log("[Save] Saving drill to database:", {
+        drillDbId,
+        membersCount: currentMembers.length,
+        setsCount: currentSets.length,
+        memberIds: currentMembers.map(m => m.id),
+      });
+      
       const payload = {
-        title: drillTitle || "無題",
-        dataName: drillDataName || "",
-        sets,
-        members,
+        title: currentTitle || "無題",
+        dataName: currentDataName || "",
+        sets: currentSets,
+        members: currentMembers,
         version: Date.now(), // クライアント側のバージョン
         clientTimestamp: new Date().toISOString(),
       };
@@ -184,7 +230,7 @@ export function useDrillDatabase({
         message: "データベースへの保存に失敗しました",
       });
     }
-  }, [drillDbId, drillTitle, drillDataName, sets, members, setDrillDbId, loadDrillFromDatabase]);
+  }, [drillDbId, setDrillDbId, loadDrillFromDatabase]);
 
   return {
     loadDrillFromDatabase,

@@ -6,6 +6,7 @@ import { useMenu } from "@/context/MenuContext";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import BackToDrillButton from "@/components/BackToDrillButton";
 
 // フィールドテンプレート（将来的に拡張可能）
 type FieldTemplate = {
@@ -146,13 +147,16 @@ export default function GridCustomizationPage() {
     <div className="space-y-8">
       {/* ヘッダーセクション */}
       <section className="space-y-3">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/settings"
-            className="text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            ← 設定に戻る
-          </Link>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/settings"
+              className="text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              ← 設定に戻る
+            </Link>
+          </div>
+          <BackToDrillButton />
         </div>
         <h1 className="text-3xl font-semibold tracking-tight">
           グリッドカスタマイズ

@@ -11,6 +11,7 @@ import {
   exportMembersToJSON,
   importMembersFromJSON,
 } from "@/lib/drill/storage";
+import BackToDrillButton from "@/components/BackToDrillButton";
 
 export default function MembersPage() {
   const { members, setMembers } = useMembers();
@@ -163,6 +164,7 @@ export default function MembersPage() {
             メンバーの情報を管理します。編集内容はドリルエディタに反映されます。
           </p>
         </div>
+        <BackToDrillButton />
       </div>
 
       <button

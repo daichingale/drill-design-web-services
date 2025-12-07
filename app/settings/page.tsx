@@ -5,6 +5,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { useMenu } from "@/context/MenuContext";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import BackToDrillButton from "@/components/BackToDrillButton";
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetSettings } = useSettings();
@@ -76,10 +77,15 @@ export default function SettingsPage() {
     <div className="space-y-8">
       {/* ヘッダーセクション */}
       <section className="space-y-3">
-        <h1 className="text-3xl font-semibold tracking-tight">設定</h1>
-        <p className="text-sm text-slate-300 leading-relaxed">
-          フィールドサイズやステップ数、表示の単位などを設定できます。
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">設定</h1>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              フィールドサイズやステップ数、表示の単位などを設定できます。
+            </p>
+          </div>
+          <BackToDrillButton />
+        </div>
       </section>
 
       {/* フィールド設定セクション */}

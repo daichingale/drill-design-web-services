@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { UiSet } from "@/lib/drill/uiTypes";
 import type { Member } from "@/context/MembersContext";
 import { requireAuth, AuthError } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 // GET: ドリル一覧取得
 export async function GET() {
@@ -11,23 +12,49 @@ export async function GET() {
     const user = await requireAuth();
     console.log("[API] GET /api/drills called by user:", user.id);
     
-    // 動的インポートでPrismaクライアントを読み込む（エラーを回避）
-    let prisma;
-    try {
-      const prismaModule = await import("@/lib/prisma");
-      prisma = prismaModule.prisma;
-      console.log("[API] Prisma client imported successfully");
-    } catch (importError) {
-      console.error("[API] Failed to import Prisma client:", importError);
-      throw new Error(`Failed to import Prisma client: ${importError instanceof Error ? importError.message : "Unknown error"}`);
-    }
-    
     console.log("[API] Prisma client initialized:", !!prisma);
     console.log("[API] DATABASE_URL exists:", !!process.env.DATABASE_URL);
     
     console.log("[API] Starting database query...");
+    
+    // 自分が作成したドリルまたは共同編集者として追加されたドリルを取得
+    // まず、共同編集者として追加されたドリルIDを取得
+    let collaboratorDrillIds: string[] = [];
+    
+    // PrismaクライアントにdrillCollaboratorが存在するか確認
+    if (prisma && typeof prisma.drillCollaborator !== 'undefined') {
+      try {
+        const collaboratorDrills = await prisma.drillCollaborator.findMany({
+          where: {
+            userId: user.id,
+          },
+          select: {
+            drillId: true,
+          },
+        });
+        collaboratorDrillIds = collaboratorDrills.map((c) => c.drillId);
+        console.log("[API] Found", collaboratorDrillIds.length, "collaborator drills");
+      } catch (collabError) {
+        console.error("[API] Error fetching collaborator drills:", collabError);
+        // エラーが発生した場合は空配列を使用（自分が作成したドリルのみ表示）
+        collaboratorDrillIds = [];
+      }
+    } else {
+      console.warn("[API] prisma.drillCollaborator is not available, skipping collaborator query");
+      // drillCollaboratorが存在しない場合は、自分が作成したドリルのみ表示
+    }
+
     const drills = await prisma.drill.findMany({
-      where: { userId: user.id },
+      where: {
+        OR: [
+          { userId: user.id },
+          {
+            id: {
+              in: collaboratorDrillIds,
+            },
+          },
+        ],
+      },
       orderBy: { updatedAt: "desc" },
       include: {
         sets: {
@@ -36,11 +63,59 @@ export async function GET() {
         members: {
           orderBy: { memberId: "asc" },
         },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
       },
     });
 
+    // 各ドリルの共同編集者情報を取得（ユーザーの役割を確認）
+    let collaboratorMap = new Map<string, string>();
+    
+    // PrismaクライアントにdrillCollaboratorが存在する場合のみ取得
+    if (prisma && typeof prisma.drillCollaborator !== 'undefined' && drills.length > 0) {
+      try {
+        const allDrillIds = drills.map((d) => d.id);
+        const userCollaborators = await prisma.drillCollaborator.findMany({
+          where: {
+            drillId: { in: allDrillIds },
+            userId: user.id,
+          },
+          select: {
+            drillId: true,
+            role: true,
+          },
+        });
+
+        // ドリルIDをキーとしたマップを作成
+        collaboratorMap = new Map(
+          userCollaborators.map((c) => [c.drillId, c.role])
+        );
+      } catch (collabError) {
+        console.error("[API] Error fetching user collaborators:", collabError);
+        // エラーが発生した場合は空のマップを使用
+      }
+    }
+
+    // 各ドリルに役割情報を追加
+    const drillsWithCollaboratorInfo = drills.map((drill) => {
+      const userRole =
+        drill.userId === user.id
+          ? "owner"
+          : collaboratorMap.get(drill.id) || null;
+
+      return {
+        ...drill,
+        userRole,
+      };
+    });
+
     // レスポンス形式に変換
-    const result = drills.map((drill) => ({
+    const result = drillsWithCollaboratorInfo.map((drill) => ({
       id: drill.id,
       title: drill.title,
       dataName: drill.dataName,
@@ -48,6 +123,10 @@ export async function GET() {
       updatedAt: drill.updatedAt.toISOString(),
       setsCount: drill.sets.length,
       membersCount: drill.members.length,
+      ownerId: drill.userId,
+      ownerName: drill.user?.name || drill.user?.email || "不明",
+      isOwner: drill.userId === user.id,
+      userRole: drill.userRole,
     }));
 
     console.log("[API] Query successful, returning", result.length, "drills");

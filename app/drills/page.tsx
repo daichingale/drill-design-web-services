@@ -14,6 +14,10 @@ type DrillListItem = {
   updatedAt: string;
   setsCount: number;
   membersCount: number;
+  ownerId: string;
+  ownerName: string;
+  isOwner: boolean;
+  userRole: string | null;
 };
 
 export default function DrillsPage() {
@@ -223,12 +227,22 @@ export default function DrillsPage() {
                 className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-6 hover:border-emerald-500/50 transition-all duration-200 shadow-lg hover:shadow-xl"
               >
                 <div className="mb-4">
-                  <h2 className="text-xl font-semibold text-slate-200 mb-1">
-                    {drill.title || "無題"}
-                  </h2>
+                  <div className="flex items-start justify-between mb-1">
+                    <h2 className="text-xl font-semibold text-slate-200">
+                      {drill.title || "無題"}
+                    </h2>
+                    {!drill.isOwner && (
+                      <span className="px-2 py-1 rounded bg-blue-900/40 border border-blue-500/60 text-blue-200 text-xs whitespace-nowrap">
+                        {drill.userRole === "editor" ? "編集者" : "閲覧者"}
+                      </span>
+                    )}
+                  </div>
                   {drill.dataName && (
-                    <p className="text-sm text-slate-400">{drill.dataName}</p>
+                    <p className="text-sm text-slate-400 mb-1">{drill.dataName}</p>
                   )}
+                  <p className="text-xs text-slate-500">
+                    作成者: {drill.ownerName}
+                  </p>
                 </div>
 
                 <div className="mb-4 space-y-2 text-sm">
