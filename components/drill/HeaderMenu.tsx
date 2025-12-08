@@ -148,7 +148,14 @@ export default function HeaderMenu({ groups }: HeaderMenuProps) {
             </button>
 
           {openMenu === group.label && (
-            <div className="absolute top-full left-0 mt-1 w-64 bg-slate-800 border border-slate-600 rounded-md shadow-2xl py-1.5 z-50">
+            <div 
+              className="absolute top-full left-0 mt-1 w-64 bg-slate-800 border border-slate-600 rounded-md shadow-2xl py-1.5 z-50 overflow-y-auto"
+              style={{
+                maxHeight: 'calc(100vh - 120px)', // ヘッダー分の余白を考慮
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#475569 #1e293b',
+              }}
+            >
               {group.items.map((item, idx) => {
                 if (item.divider) {
                   return (

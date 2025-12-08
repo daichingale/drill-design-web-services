@@ -39,10 +39,6 @@ import PrintPreviewDialog from "@/components/drill/PrintPreviewDialog";
 import MetadataDialog from "@/components/drill/MetadataDialog";
 import MobileView from "@/components/drill/MobileView";
 import { useMusicSync } from "@/hooks/useMusicSync";
-import MusicSyncPanel from "@/components/drill/MusicSyncPanel";
-import AdvancedMusicSyncPanel from "@/components/drill/AdvancedMusicSyncPanel";
-import MusicAnalysisPanel from "@/components/drill/MusicAnalysisPanel";
-import LearningPanel from "@/components/drill/LearningPanel";
 import StatisticsPanel from "@/components/drill/StatisticsPanel";
 import PerformanceDashboard from "@/components/drill/PerformanceDashboard";
 import PathVisualizationPanel from "@/components/drill/PathVisualizationPanel";
@@ -70,6 +66,10 @@ import { useSession } from "next-auth/react";
 import CollaboratorsPanel from "@/components/drill/CollaboratorsPanel";
 import CommentsPanel from "@/components/drill/CommentsPanel";
 import ChangeHistoryPanel from "@/components/drill/ChangeHistoryPanel";
+import ConflictResolutionDialog from "@/components/drill/ConflictResolutionDialog";
+import StoryboardView from "@/components/drill/StoryboardView";
+import VersionCompareView from "@/components/drill/VersionCompareView";
+import BranchManagementView from "@/components/drill/BranchManagementView";
 
 // UiSet型はlib/drill/uiTypes.tsからインポートするため、ここでは定義しない
 // 型定義はtypes/drillEditor.tsに移動
@@ -103,6 +103,12 @@ export default function DrillPage() {
       setConfirmedCountsCollapsed,
       isMobileView,
       setIsMobileView,
+      isStoryboardOpen,
+      setIsStoryboardOpen,
+      isVersionCompareOpen,
+      setIsVersionCompareOpen,
+      isBranchManagementOpen,
+      setIsBranchManagementOpen,
     },
     edit: {
       pendingPositions: editPendingPositions,
@@ -154,17 +160,22 @@ export default function DrillPage() {
   const { copyToClipboard, pasteFromClipboard } = useClipboard();
 
   // 競合解決機能
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [currentConflict, setCurrentConflict] = useState<any>(null);
+  const [conflictLocalData, setConflictLocalData] = useState<any>(null);
+  const [conflictRemoteData, setConflictRemoteData] = useState<any>(null);
+
   const conflictResolution = useConflictResolution({
-    drillId: pageState.metadata.drillDbId,
+    drillId: pageState.metadata.drillDbId || "",
     onConflictDetected: (conflict) => {
       console.warn("[Conflict] Conflict detected:", conflict);
-      addGlobalNotification({
-        type: "warning",
-        message: "編集の競合が検出されました。最新の状態を取得します。",
-      });
+      setCurrentConflict(conflict);
+      setConflictDialogOpen(true);
     },
     onConflictResolved: (resolved) => {
       console.log("[Conflict] Conflict resolved:", resolved);
+      setConflictDialogOpen(false);
+      setCurrentConflict(null);
     },
   });
 
@@ -177,16 +188,22 @@ export default function DrillPage() {
       
       // ドリル更新メッセージの場合
       if (message.type === "drill_updated") {
+        const localData = { sets, members, title: pageState.metadata.drillTitle, dataName: pageState.metadata.drillDataName };
+        const remoteData = message.data;
+        const remoteTimestamp = new Date(message.timestamp).getTime();
+        
         // 競合解決を適用
         const { hasConflict, resolvedData } = conflictResolution.applyRemoteChange(
-          message.data,
-          new Date(message.timestamp).getTime(),
-          { sets, members, title: pageState.metadata.drillTitle, dataName: pageState.metadata.drillDataName }
+          remoteData,
+          remoteTimestamp,
+          localData
         );
 
         if (hasConflict) {
-          // 競合があった場合は最新の状態を再読み込み
-          // loadDrillFromDatabaseは後で定義されるため、useEffectで呼び出す
+          // 競合があった場合はダイアログを表示
+          setConflictLocalData(localData);
+          setConflictRemoteData(remoteData);
+          // ダイアログはonConflictDetectedで開かれる
         } else if (resolvedData) {
           // 競合がなければリモートの変更を適用
           if (resolvedData.sets) {
@@ -458,10 +475,41 @@ export default function DrillPage() {
   } = useIndividualPlacement(selectedIds);
 
   const handlePlaceMember = useCallback(
-    (id: string, pos: WorldPos) => {
-      handlePlaceMemberBase(id, pos, handleMove);
+    (id: string, pos: WorldPos): boolean => {
+      // 現在のセットの位置情報を取得（衝突チェック用）
+      const existingPositions = currentSet?.positions || {};
+      
+      // 衝突チェック付きで配置
+      const success = handlePlaceMemberBase(
+        id,
+        pos,
+        handleMove,
+        existingPositions,
+        (message: string) => {
+          addGlobalNotification({
+            type: "error",
+            message,
+            autoRemoveDelay: 1000, // 1秒で自動削除（操作の邪魔にならないように）
+          });
+        }
+      );
+      
+      // 配置が成功した場合のみ通知
+      if (success) {
+        // キューに残っているメンバー数を確認（配置後なので-1）
+        const remainingCount = placementQueue.length - 1;
+        if (remainingCount === 0) {
+          // 最後のメンバーを配置した場合
+          addGlobalNotification({
+            type: "success",
+            message: "すべてのメンバーの配置が完了しました。",
+          });
+        }
+      }
+      
+      return success || false;
     },
-    [handlePlaceMemberBase, handleMove]
+    [handlePlaceMemberBase, handleMove, currentSet, placementQueue.length, addGlobalNotification]
   );
 
   // ===== Undo/Redo統合 =====
@@ -1715,6 +1763,77 @@ export default function DrillPage() {
       ],
     },
     {
+      label: "表示",
+      icon: "👁️",
+      items: [
+        {
+          label: "ストーリーボード",
+          icon: "📋",
+          action: () => setIsStoryboardOpen(true),
+        },
+        { divider: true },
+        {
+          label: "3Dプレビュー",
+          icon: "🎥",
+          action: () => setIs3DPreviewOpen(true),
+        },
+        {
+          label: "グリッド表示の切り替え",
+          icon: "⊞",
+          action: handleToggleGrid,
+        },
+        { divider: true },
+        {
+          label: "ズームイン",
+          icon: "🔍",
+          shortcut: "Ctrl++",
+          action: handleZoomIn,
+        },
+        {
+          label: "ズームアウト",
+          icon: "🔍",
+          shortcut: "Ctrl+-",
+          action: handleZoomOut,
+        },
+        {
+          label: "ズームリセット",
+          icon: "🎯",
+          action: handleZoomReset,
+        },
+        { divider: true },
+        {
+          label: "統計パネルの表示切り替え",
+          icon: "📊",
+          action: () => updateSettings({ showStatistics: !settings.showStatistics }),
+        },
+        { divider: true },
+        {
+          label: "バージョン比較",
+          icon: "🔀",
+          action: () => setIsVersionCompareOpen(true),
+        },
+        { divider: true },
+        {
+          label: "コマンドパレット",
+          icon: "🔍",
+          shortcut: "Ctrl+K",
+          action: () => setCommandPaletteOpen(true),
+        },
+        {
+          label: "設定",
+          icon: "⚙️",
+          action: () => {
+            const drillId = pageState.metadata.drillDbId;
+            if (drillId) {
+              window.location.href = `/settings?id=${drillId}`;
+            } else {
+              window.location.href = "/settings";
+            }
+          },
+        },
+      ],
+    },
+    {
       label: "オプション",
       icon: "⚙️",
       items: [
@@ -1729,6 +1848,12 @@ export default function DrillPage() {
               window.location.href = "/drill/beta";
             }
           },
+        },
+        { divider: true },
+        {
+          label: "ブランチ管理",
+          icon: "🌿",
+          action: () => setIsBranchManagementOpen(true),
         },
       ],
     },
@@ -2583,6 +2708,115 @@ export default function DrillPage() {
         />
       )}
       
+      {/* 競合解決ダイアログ */}
+      <ConflictResolutionDialog
+        isOpen={conflictDialogOpen}
+        conflict={currentConflict}
+        onResolve={(strategy, useRemote) => {
+          if (currentConflict && conflictLocalData && conflictRemoteData) {
+            const { resolveConflict } = require("@/lib/drill/conflictResolution");
+            const resolved = resolveConflict(
+              currentConflict,
+              conflictLocalData,
+              conflictRemoteData,
+              strategy
+            );
+            
+            // 解決されたデータを適用
+            if (resolved.sets) {
+              restoreState(resolved.sets, [], currentSetId);
+            }
+            if (resolved.members) {
+              setMembers(resolved.members);
+            }
+            if (resolved.title !== undefined) {
+              setDrillTitle(resolved.title);
+            }
+            if (resolved.dataName !== undefined) {
+              setDrillDataName(resolved.dataName);
+            }
+            
+            addGlobalNotification({
+              type: "success",
+              message: "競合が解決されました。",
+            });
+            
+            setConflictDialogOpen(false);
+            setCurrentConflict(null);
+            setConflictLocalData(null);
+            setConflictRemoteData(null);
+          }
+        }}
+        onCancel={() => {
+          setConflictDialogOpen(false);
+          setCurrentConflict(null);
+          setConflictLocalData(null);
+          setConflictRemoteData(null);
+        }}
+        localDataPreview={conflictLocalData}
+        remoteDataPreview={conflictRemoteData}
+      />
+
+      {/* ストーリーボード */}
+      {isStoryboardOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900">
+          <StoryboardView
+            sets={sets}
+            members={members}
+            currentSetId={currentSetId}
+            onSelectSet={(setId) => {
+              setCurrentSetId(setId);
+              setIsStoryboardOpen(false);
+            }}
+            onReorderSet={(fromIndex, toIndex) => {
+              // インデックスからセットIDを取得
+              const sortedSets = [...sets].sort((a, b) => a.startCount - b.startCount);
+              const fromSet = sortedSets[fromIndex];
+              const toSet = sortedSets[toIndex];
+              
+              if (!fromSet || !toSet) return;
+              
+              // インデックスの差に応じてup/downを決定
+              if (fromIndex < toIndex) {
+                // 下に移動
+                for (let i = fromIndex; i < toIndex; i++) {
+                  const currentSet = sortedSets[i];
+                  const nextSet = sortedSets[i + 1];
+                  if (currentSet && nextSet) {
+                    reorderSet(currentSet.id, 'down');
+                  }
+                }
+              } else {
+                // 上に移動
+                for (let i = fromIndex; i > toIndex; i--) {
+                  const currentSet = sortedSets[i];
+                  const prevSet = sortedSets[i - 1];
+                  if (currentSet && prevSet) {
+                    reorderSet(currentSet.id, 'up');
+                  }
+                }
+              }
+            }}
+            onDeleteSet={(setId) => {
+              if (confirm("このセットを削除しますか？")) {
+                deleteSet(setId);
+              }
+            }}
+            onAddSet={() => {
+              addSetAtCount(currentCount);
+            }}
+            fieldWidth={settings.fieldWidth}
+            fieldHeight={settings.fieldHeight}
+          />
+          <button
+            onClick={() => setIsStoryboardOpen(false)}
+            className="fixed top-4 right-4 z-50 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-600 transition-colors"
+          >
+            ✕ 閉じる
+          </button>
+        </div>
+      )}
+
       {/* メタデータ編集ダイアログ */}
       <MetadataDialog
         isOpen={isMetadataDialogOpen}
@@ -2842,6 +3076,8 @@ export default function DrillPage() {
                 onScaleSelected={scaleSelected}
                 individualPlacementMode={individualPlacementMode}
                 onToggleIndividualPlacement={handleToggleIndividualPlacement}
+                placementQueue={placementQueue}
+                members={members.map(m => ({ id: m.id, name: m.name, color: m.color }))}
                 onChangeSetStartCount={handleChangeSetStartCount}
                 snapMode={snapMode}
                 onChangeSnapMode={setSnapMode}
@@ -3202,102 +3438,6 @@ export default function DrillPage() {
               )}
             </div>
 
-            {/* 音楽分析パネル（AI解析） */}
-            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
-              <MusicAnalysisPanel
-                onAnalysisComplete={(result) => {
-                  // BPMを自動設定
-                  if (result.bpm) {
-                    setBPM(result.bpm);
-                  }
-                }}
-                onSectionsDetected={(sections) => {
-                  // セクション情報を保存（後で使用）
-                  console.log("検出されたセクション:", sections);
-                }}
-              />
-            </div>
-
-            {/* 音楽同期パネル（基本） */}
-            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-4 shadow-xl">
-              <MusicSyncPanel
-                isLoaded={musicState.isLoaded}
-                isPlaying={musicState.isPlaying}
-                currentTime={musicState.currentTime}
-                duration={musicState.duration}
-                markers={musicState.markers}
-                bpm={musicState.bpm}
-                fileName={musicState.fileName}
-                onLoadMusic={loadMusic}
-                onPlayMusic={playMusic}
-                onStopMusic={stopMusic}
-                onAddMarker={addMarker}
-                onRemoveMarker={removeMarker}
-                onSetBPM={setBPM}
-                onSyncCurrentTime={syncCurrentTime}
-                currentCount={currentCount}
-                playbackBPM={playbackBPM}
-                onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
-              />
-            </div>
-
-            {/* 音楽同期パネル（高度設定） */}
-            {musicState.isLoaded && (
-              <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm p-4 shadow-xl">
-                <AdvancedMusicSyncPanel
-                  isLoaded={musicState.isLoaded}
-                  isPlaying={musicState.isPlaying}
-                  currentTime={musicState.currentTime}
-                  duration={musicState.duration}
-                  markers={musicState.markers}
-                  bpm={musicState.bpm}
-                  playbackRate={musicState.playbackRate}
-                  tracks={musicState.tracks}
-                  autoSyncEnabled={musicState.autoSyncEnabled}
-                  fileName={musicState.fileName}
-                  onLoadMusic={loadMusic}
-                  onPlayMusic={playMusic}
-                  onStopMusic={stopMusic}
-                  onAddMarker={addMarker}
-                  onRemoveMarker={removeMarker}
-                  onUpdateMarker={updateMarker}
-                  onSetBPM={setBPM}
-                  onSetPlaybackRate={setPlaybackRate}
-                  onSetPlaybackRateFromBPM={setPlaybackRateFromBPM}
-                  onAddTrack={addTrack}
-                  onRemoveTrack={removeTrack}
-                  onSetTrackVolume={setTrackVolume}
-                  onSetTrackEnabled={setTrackEnabled}
-                  onSetAutoSync={setAutoSync}
-                  onSyncCurrentTime={syncCurrentTime}
-                  currentCount={currentCount}
-                  playbackBPM={playbackBPM}
-                  onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
-                />
-              </div>
-            )}
-
-            {/* 学習・提案パネル */}
-            <div className="rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm shadow-xl">
-              <LearningPanel
-                sets={sets}
-                members={members}
-                drillTitle={pageState.metadata.drillTitle}
-                onSaveDrill={() => {
-                  addGlobalNotification({
-                    type: "success",
-                    message: "ドリルを学習データとして保存しました",
-                  });
-                }}
-                onSuggestPattern={(section) => {
-                  addGlobalNotification({
-                    type: "info",
-                    message: `${section}用のパターン提案機能は今後実装予定です`,
-                  });
-                }}
-              />
-            </div>
-
             {/* 統計・分析パネル（設定で表示/非表示を切り替え可能） */}
             {settings.showStatistics && (
               <>
@@ -3407,6 +3547,11 @@ export default function DrillPage() {
             onToggleLoopRange={() => setLoopRangeEnabled((prev) => !prev)}
             drillTitle={pageState.metadata.drillTitle}
             onClickDrillTitle={() => pageState.ui.setIsMetadataDialogOpen(true)}
+            playbackBPM={playbackBPM}
+            onSetPlaybackBPM={(bpm) => updateSettings({ playbackBPM: bpm })}
+            onLoadMusic={loadMusic}
+            isMusicLoaded={musicState.isLoaded}
+            musicFileName={musicState.fileName || undefined}
           />
         </div>
       </div>

@@ -4,6 +4,11 @@ import { useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BackToDrillButton from "@/components/BackToDrillButton";
+import MusicAnalysisPanel from "@/components/drill/MusicAnalysisPanel";
+import LearningPanel from "@/components/drill/LearningPanel";
+import { useMusicSync } from "@/hooks/useMusicSync";
+import { useSettings } from "@/context/SettingsContext";
+import { addGlobalNotification } from "@/components/ErrorNotification";
 
 function BetaFeaturesPageInner() {
   const searchParams = useSearchParams();

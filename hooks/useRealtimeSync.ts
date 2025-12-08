@@ -89,28 +89,46 @@ export function useRealtimeSync({
           return;
         }
 
-        const errorInfo = {
-          readyState: currentEventSource.readyState,
-          readyStateText: currentEventSource.readyState === EventSource.CONNECTING ? 'CONNECTING' 
-            : currentEventSource.readyState === EventSource.OPEN ? 'OPEN' 
-            : currentEventSource.readyState === EventSource.CLOSED ? 'CLOSED' 
-            : 'UNKNOWN',
-          url: currentEventSource.url,
-          drillId,
-          userId: session?.user?.id,
-          reconnectAttempt: reconnectAttemptsRef.current,
-          error: error ? {
-            type: error?.constructor?.name,
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-          } : null,
-        };
-        
-        // readyStateが2（CLOSED）の場合は接続が閉じられたことを意味する
-        if (currentEventSource.readyState === EventSource.CLOSED) {
-          console.warn("[RealtimeSync] Connection closed:", JSON.stringify(errorInfo, null, 2));
+        const readyState = currentEventSource.readyState;
+        const readyStateText = readyState === EventSource.CONNECTING ? 'CONNECTING' 
+          : readyState === EventSource.OPEN ? 'OPEN' 
+          : readyState === EventSource.CLOSED ? 'CLOSED' 
+          : 'UNKNOWN';
+
+        // CONNECTING状態でのエラーは、接続が確立される前にエラーが発生したことを意味する
+        // これは通常、ネットワークエラーやサーバーエラーが原因
+        // この場合は警告レベルでログを出力し、再接続を試みる
+        if (readyState === EventSource.CONNECTING) {
+          console.warn("[RealtimeSync] Connection failed during initial connection attempt:", {
+            drillId,
+            userId: session?.user?.id,
+            url: currentEventSource.url,
+            readyState: readyStateText,
+            reconnectAttempt: reconnectAttemptsRef.current,
+            message: "接続の確立に失敗しました。再接続を試みます。",
+          });
+        } else if (readyState === EventSource.CLOSED) {
+          // 接続が閉じられた場合
+          console.warn("[RealtimeSync] Connection closed:", {
+            drillId,
+            userId: session?.user?.id,
+            url: currentEventSource.url,
+            readyState: readyStateText,
+            reconnectAttempt: reconnectAttemptsRef.current,
+          });
         } else {
-          console.error("[RealtimeSync] Connection error:", JSON.stringify(errorInfo, null, 2));
+          // その他のエラー
+          console.error("[RealtimeSync] Connection error:", {
+            drillId,
+            userId: session?.user?.id,
+            url: currentEventSource.url,
+            readyState: readyStateText,
+            reconnectAttempt: reconnectAttemptsRef.current,
+            error: error ? {
+              type: error?.constructor?.name,
+              message: error instanceof Error ? error.message : String(error),
+            } : null,
+          });
         }
         
         currentEventSource.close();

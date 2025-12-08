@@ -154,6 +154,7 @@ export function useConflictResolution({
     applyRemoteChange,
     clearConflicts,
     localVersion: localVersionRef.current,
+    onConflictResolved,
   };
 }
 

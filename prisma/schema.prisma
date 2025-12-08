@@ -19,17 +19,18 @@ model User {
   email         String    @unique
   emailVerified DateTime?
   image         String?
-  password      String?   // パスワードハッシュ（Credentials認証用）
+  password      String? // パスワードハッシュ（Credentials認証用）
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  
+
   accounts           Account[]
   sessions           Session[]
   drills             Drill[]
   drillCollaborators DrillCollaborator[]
   changeHistory      ChangeHistory[]
   comments           Comment[]
-  
+  drillBranches      DrillBranch[]
+
   @@map("users")
 }
 
@@ -75,39 +76,40 @@ model VerificationToken {
 }
 
 model Drill {
-  id          String   @id @default(uuid())
-  userId      String?  // ユーザーID（データ分離、一時的にnullable）
-  title       String   @default("")
-  dataName    String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  user              User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sets              Set[]
-  members           Member[]
-  collaborators     DrillCollaborator[]
-  changeHistory     ChangeHistory[]
-  comments          Comment[]
-  
+  id        String   @id @default(uuid())
+  userId    String? // ユーザーID（データ分離、一時的にnullable）
+  title     String   @default("")
+  dataName  String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          User?               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sets          Set[]
+  members       Member[]
+  collaborators DrillCollaborator[]
+  changeHistory ChangeHistory[]
+  comments      Comment[]
+  branches      DrillBranch[]
+
   @@index([userId])
   @@map("drills")
 }
 
 model Set {
-  id            String   @id @default(uuid())
-  drillId       String
-  name          String   @default("")
-  startCount    Int      @default(0)
-  note          String   @default("")
-  instructions  String   @default("")
-  nextMove      String   @default("")
-  positions     Json     // Record<string, {x: number, y: number}>
+  id               String   @id @default(uuid())
+  drillId          String
+  name             String   @default("")
+  startCount       Int      @default(0)
+  note             String   @default("")
+  instructions     String   @default("")
+  nextMove         String   @default("")
+  positions        Json // Record<string, {x: number, y: number}>
   positionsByCount Json? // Record<number, Record<string, {x: number, y: number}>>
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  drill         Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
-  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  drill Drill @relation(fields: [drillId], references: [id], onDelete: Cascade)
+
   @@index([drillId])
   @@map("sets")
 }
@@ -115,15 +117,15 @@ model Set {
 model Member {
   id        String   @id @default(uuid())
   drillId   String
-  memberId  String   // UI上のID（M1, M2など）
+  memberId  String // UI上のID（M1, M2など）
   name      String   @default("")
   part      String   @default("")
   color     String   @default("#888888")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  drill     Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
-  
+
+  drill Drill @relation(fields: [drillId], references: [id], onDelete: Cascade)
+
   @@unique([drillId, memberId])
   @@index([drillId])
   @@map("members")
@@ -137,10 +139,10 @@ model DrillCollaborator {
   role      String   @default("viewer") // "owner", "editor", "viewer"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
-  drill     Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
+  drill Drill @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([drillId, userId])
   @@index([drillId])
   @@index([userId])
@@ -149,18 +151,18 @@ model DrillCollaborator {
 
 // 変更履歴の追跡
 model ChangeHistory {
-  id          String   @id @default(uuid())
-  drillId     String
-  userId      String
-  action      String   // "create", "update", "delete", "move", "add_member", etc.
-  entityType  String   // "set", "member", "drill", etc.
-  entityId    String?
-  changes     Json?    // 変更内容の詳細
-  createdAt   DateTime @default(now())
-  
-  drill       Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id         String   @id @default(uuid())
+  drillId    String
+  userId     String
+  action     String // "create", "update", "delete", "move", "add_member", etc.
+  entityType String // "set", "member", "drill", etc.
+  entityId   String?
+  changes    Json? // 変更内容の詳細
+  createdAt  DateTime @default(now())
+
+  drill Drill @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([drillId])
   @@index([userId])
   @@index([createdAt])
@@ -169,23 +171,44 @@ model ChangeHistory {
 
 // コメント機能
 model Comment {
-  id          String   @id @default(uuid())
-  drillId     String
-  userId      String
-  entityType  String   // "set", "member", "drill", etc.
-  entityId    String?  // コメント対象のID（nullの場合はドリル全体へのコメント）
-  content     String   @db.Text
-  x           Float?   // フィールド上の位置（オプション）
-  y           Float?   // フィールド上の位置（オプション）
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  deletedAt   DateTime?
-  
-  drill       Drill    @relation(fields: [drillId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id         String    @id @default(uuid())
+  drillId    String
+  userId     String
+  entityType String // "set", "member", "drill", etc.
+  entityId   String? // コメント対象のID（nullの場合はドリル全体へのコメント）
+  content    String    @db.Text
+  x          Float? // フィールド上の位置（オプション）
+  y          Float? // フィールド上の位置（オプション）
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  drill Drill @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([drillId])
   @@index([userId])
   @@index([entityType, entityId])
   @@map("comments")
+}
+
+// ブランチ管理（Gitライクな機能）
+model DrillBranch {
+  id           String   @id @default(uuid())
+  drillId      String
+  name         String
+  description  String?
+  baseBranchId String? // 親ブランチのID
+  isCurrent    Boolean  @default(false) // 現在のブランチ
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  userId       String // 作成者
+
+  drill Drill @relation(fields: [drillId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([drillId, name])
+  @@index([drillId])
+  @@index([userId])
+  @@map("drill_branches")
 }

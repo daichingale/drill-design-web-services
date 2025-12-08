@@ -28,7 +28,7 @@ type Props = {
   clampAndSnap: (p: WorldPos) => WorldPos; // ★ 追加
   onRotateSelected?: (center: WorldPos, angle: number) => void; // 回転コールバック
   individualPlacementMode?: boolean; // 個別配置モード
-  onPlaceMember?: (id: string, pos: WorldPos) => void; // 個別配置コールバック
+  onPlaceMember?: (id: string, pos: WorldPos) => boolean | void; // 個別配置コールバック（戻り値: 配置成功時true、失敗時false）
   placementQueue?: string[]; // 配置待ちのメンバーIDリスト
   onDropMemberToField?: (memberIds: string[], position: WorldPos) => void; // ドロップ配置コールバック
   // 横一列レイアウト編集用（未確定ラインの両端ハンドル）
@@ -270,8 +270,12 @@ const FieldCanvas = forwardRef<FieldCanvasRef, Props>((props, ref) => {
         // 個別配置モードの場合、フィールドをクリックしたらメンバーを配置
         if (individualPlacementMode && onPlaceMember && placementQueue.length > 0) {
           // メンバーや他の要素をクリックした場合はスキップ
-          if (e.target === e.target.getStage() || e.target.getClassName() === "Rect") {
-            const stage = e.target.getStage();
+          // Stageまたは背景のRectをクリックした場合のみ処理
+          const target = e.target;
+          const isBackground = target === target.getStage() || target.getClassName() === "Rect";
+          
+          if (isBackground) {
+            const stage = target.getStage();
             const pointerPos = stage.getPointerPosition();
             if (pointerPos) {
               const worldPos = canvasToWorld(pointerPos.x / scale, pointerPos.y / scale);

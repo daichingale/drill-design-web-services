@@ -19,6 +19,9 @@ export type DrillPageUIState = {
   isLayoutModalOpen: boolean;
   confirmedCountsCollapsed: boolean;
   isMobileView: boolean;
+  isStoryboardOpen: boolean;
+  isVersionCompareOpen: boolean;
+  isBranchManagementOpen: boolean;
 };
 
 /**
@@ -69,6 +72,9 @@ export function useDrillPageState() {
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
   const [confirmedCountsCollapsed, setConfirmedCountsCollapsed] = useState(false);
   const [isMobileView, setIsMobileView] = useState(false);
+  const [isStoryboardOpen, setIsStoryboardOpen] = useState(false);
+  const [isVersionCompareOpen, setIsVersionCompareOpen] = useState(false);
+  const [isBranchManagementOpen, setIsBranchManagementOpen] = useState(false);
 
   // 編集状態
   const [pendingPositions, setPendingPositions] = useState<Record<string, WorldPos> | null>(null);
@@ -109,6 +115,12 @@ export function useDrillPageState() {
       setConfirmedCountsCollapsed,
       isMobileView,
       setIsMobileView,
+      isStoryboardOpen,
+      setIsStoryboardOpen,
+      isVersionCompareOpen,
+      setIsVersionCompareOpen,
+      isBranchManagementOpen,
+      setIsBranchManagementOpen,
     },
     // 編集状態
     edit: {

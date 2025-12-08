@@ -10,6 +10,7 @@ type Notification = {
   message: string;
   details?: string;
   timestamp: Date;
+  autoRemoveDelay?: number; // 自動削除までの時間（ミリ秒）。指定がない場合はデフォルト値を使用
 };
 
 type ErrorNotificationContextType = {
@@ -28,12 +29,14 @@ export function addGlobalNotification(notification: Omit<Notification, "id" | "t
     ...notification,
     id: Math.random().toString(36).substring(7),
     timestamp: new Date(),
+    autoRemoveDelay: notification.autoRemoveDelay, // カスタムの自動削除時間を保持
   };
   globalNotifications = [...globalNotifications, newNotification];
   notificationListeners.forEach((listener) => listener(globalNotifications));
 
-  // 自動削除（エラーと警告は10秒、成功と情報は2秒）
-  const autoRemoveDelay = notification.type === "error" || notification.type === "warning" ? 10000 : 2000;
+  // 自動削除（カスタム時間が指定されている場合はそれを使用、そうでない場合はデフォルト値）
+  // デフォルト: エラーと警告は10秒、成功と情報は2秒
+  const autoRemoveDelay = notification.autoRemoveDelay ?? (notification.type === "error" || notification.type === "warning" ? 10000 : 2000);
   setTimeout(() => {
     removeGlobalNotification(newNotification.id);
   }, autoRemoveDelay);

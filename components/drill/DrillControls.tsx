@@ -49,6 +49,8 @@ type Props = {
   // 個別配置
   individualPlacementMode: boolean;
   onToggleIndividualPlacement: () => void;
+  placementQueue?: string[]; // 配置待ちのメンバーIDリスト
+  members?: Array<{ id: string; name: string; color?: string }>; // メンバー情報（配置キュー表示用）
 
   onChangeSetStartCount: (id: string, value: number) => void;
   snapMode: SnapMode;
@@ -99,6 +101,8 @@ export default function DrillControls({
   onScaleSelected,
   individualPlacementMode,
   onToggleIndividualPlacement,
+  placementQueue = [],
+  members = [],
   onChangeSetStartCount,
   snapMode,
   onChangeSnapMode,
@@ -736,9 +740,45 @@ export default function DrillControls({
                 </button>
               </div>
               {individualPlacementMode && (
-                <p className="text-[10px] text-slate-400/80 mt-2 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/30">
-                  フィールドをクリックすると、選択されたメンバーを順番に配置します。
-                </p>
+                <div className="mt-2 space-y-2">
+                  <p className="text-[10px] text-slate-400/80 px-2 py-1 rounded-md bg-slate-800/30 border border-slate-700/30">
+                    フィールドをクリックすると、選択されたメンバーを順番に配置します。
+                  </p>
+                  {placementQueue.length > 0 && (
+                    <div className="px-2 py-2 rounded-md bg-slate-800/50 border border-slate-700/50">
+                      <div className="text-xs font-semibold text-slate-300 mb-2">
+                        配置待ち: {placementQueue.length}人
+                      </div>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {placementQueue.map((memberId, index) => {
+                          const member = members.find(m => m.id === memberId);
+                          const isCurrent = index === 0;
+                          return (
+                            <div
+                              key={memberId}
+                              className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${
+                                isCurrent
+                                  ? "bg-emerald-600/30 border border-emerald-500/50 text-emerald-200"
+                                  : "bg-slate-700/30 text-slate-400"
+                              }`}
+                            >
+                              <div
+                                className="w-3 h-3 rounded-full border border-slate-600 shrink-0"
+                                style={{ backgroundColor: member?.color || "#888888" }}
+                              />
+                              <span className="flex-1 truncate">
+                                {member?.name || memberId}
+                              </span>
+                              {isCurrent && (
+                                <span className="text-emerald-400 font-semibold shrink-0">← 次</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </>

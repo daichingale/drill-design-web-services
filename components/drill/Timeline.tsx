@@ -33,6 +33,11 @@ export type TimelineProps = {
   onToggleLoopRange?: () => void;
   drillTitle?: string;
   onClickDrillTitle?: () => void;
+  playbackBPM?: number; // BPM値
+  onSetPlaybackBPM?: (bpm: number) => void; // BPM変更コールバック
+  onLoadMusic?: (file: File) => Promise<boolean> | void; // 音楽読み込みコールバック
+  isMusicLoaded?: boolean; // 音楽が読み込まれているか
+  musicFileName?: string; // 音楽ファイル名
 };
 
 /* ==================== Header ==================== */
@@ -49,6 +54,9 @@ type HeaderProps = {
   onToggleSetAtCount?: () => void;
   drillTitle?: string;
   onClickDrillTitle?: () => void;
+  onLoadMusic?: () => void;
+  isMusicLoaded?: boolean;
+  musicFileName?: string;
 };
 
 const TimelineHeader: React.FC<HeaderProps> = ({
@@ -63,6 +71,9 @@ const TimelineHeader: React.FC<HeaderProps> = ({
   onToggleSetAtCount,
   drillTitle,
   onClickDrillTitle,
+  onLoadMusic,
+  isMusicLoaded = false,
+  musicFileName,
 }) => {
   return (
     <div className="mb-1 flex items-center justify-between gap-2">
@@ -81,6 +92,33 @@ const TimelineHeader: React.FC<HeaderProps> = ({
           {isPlaying ? "■" : "▶"}
         </button>
 
+        {/* Load Music Button */}
+        {onLoadMusic && (
+          <button
+            type="button"
+            onClick={() => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = "audio/*";
+              input.onchange = (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (file && onLoadMusic) {
+                  onLoadMusic(file);
+                }
+              };
+              input.click();
+            }}
+            className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider transition-colors border ${
+              isMusicLoaded
+                ? "bg-slate-700/90 border-emerald-400/90 text-emerald-200"
+                : "bg-slate-800/70 border-slate-600/70 text-slate-200 hover:bg-slate-700/80 hover:border-emerald-500/70 hover:text-emerald-300"
+            }`}
+            title={isMusicLoaded ? musicFileName || "Music loaded" : "Load music file"}
+          >
+            {isMusicLoaded ? "🎵 Music" : "📁 Load Music"}
+          </button>
+        )}
+
         <div className="flex flex-col gap-0.5">
           <button
             type="button"
@@ -96,6 +134,18 @@ const TimelineHeader: React.FC<HeaderProps> = ({
             このドリルのテーマ / コンセプト
           </span>
         </div>
+
+        {/* 音楽ファイル名表示 */}
+        {isMusicLoaded && musicFileName && (
+          <div className="flex flex-col gap-0.5">
+            <div className="text-[11px] font-semibold tracking-wide text-emerald-300 line-clamp-1 max-w-[200px]">
+              🎵 {musicFileName}
+            </div>
+            <span className="text-[9px] text-slate-500">
+              Music File
+            </span>
+          </div>
+        )}
       </div>
 
       {/* right: counter & actions */}
@@ -520,6 +570,11 @@ type BaseTimelineProps = {
   onChangeRangeEnd: (count: number) => void;
   drillTitle?: string;
   onClickDrillTitle?: () => void;
+  playbackBPM?: number; // BPM値
+  onSetPlaybackBPM?: (bpm: number) => void; // BPM変更コールバック
+  onLoadMusic?: (file: File) => Promise<boolean> | void; // 音楽読み込みコールバック
+  isMusicLoaded?: boolean; // 音楽が読み込まれているか
+  musicFileName?: string; // 音楽ファイル名
 };
 
 const BaseTimeline: React.FC<BaseTimelineProps> = ({
@@ -540,6 +595,11 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
   onChangeRangeEnd,
   drillTitle,
   onClickDrillTitle,
+  playbackBPM = 120,
+  onSetPlaybackBPM,
+  onLoadMusic,
+  isMusicLoaded = false,
+  musicFileName,
 }) => {
   // SETが0件でも、タイムライン自体は表示し続ける
   const segments = [...sets].sort((a, b) => a.startCount - b.startCount);
@@ -742,6 +802,9 @@ const BaseTimeline: React.FC<BaseTimelineProps> = ({
           }
           drillTitle={drillTitle}
           onClickDrillTitle={onClickDrillTitle}
+          onLoadMusic={onLoadMusic}
+          isMusicLoaded={isMusicLoaded}
+          musicFileName={musicFileName}
         />
 
         <div
@@ -933,6 +996,11 @@ export default function Timeline(props: TimelineProps) {
     onToggleLoopRange,
     drillTitle,
     onClickDrillTitle,
+    playbackBPM = 120,
+    onSetPlaybackBPM,
+    onLoadMusic,
+    isMusicLoaded = false,
+    musicFileName,
   } = props;
 
   const startSet = sets.find((s) => s.id === playStartId);
@@ -1011,7 +1079,7 @@ export default function Timeline(props: TimelineProps) {
               title="ダブルクリックで全体範囲にリセット"
             >
               <span className="text-[9px]">{isLoopRangeActive ? "⟳" : "◯"}</span>
-              <span>{isLoopRangeActive ? "LOOP RANGE ON" : "LOOP TANGE OFF"}</span>
+              <span>{isLoopRangeActive ? "LOOP RANGE ON" : "LOOP RANGE OFF"}</span>
             </button>
 
             {/* Start / End の小さなパネル */}
@@ -1041,6 +1109,32 @@ export default function Timeline(props: TimelineProps) {
                   }}
                 />
               </div>
+            </div>
+
+            {/* BPM表示（DAW風） */}
+            <div className="flex items-center gap-1 rounded-full bg-slate-900/80 border border-slate-700/80 px-2 py-0.5">
+              <span className="text-[9px] text-slate-500 uppercase tracking-wider">BPM</span>
+              {onSetPlaybackBPM ? (
+                <input
+                  type="number"
+                  min="1"
+                  max="300"
+                  step="1"
+                  className="w-12 rounded bg-slate-950 border border-slate-600/80 px-1 py-0.5 text-[11px] text-emerald-300 font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500/70 hover:bg-slate-900 transition-colors text-center"
+                  value={Math.round(playbackBPM)}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (!isNaN(v) && v >= 1 && v <= 300) {
+                      onSetPlaybackBPM(v);
+                    }
+                  }}
+                  title="BPMを変更（1-300）"
+                />
+              ) : (
+                <span className="text-[11px] text-emerald-300 font-semibold px-1">
+                  {Math.round(playbackBPM)}
+                </span>
+              )}
             </div>
 
             {/* セット or カウント情報のサマリ */}
@@ -1103,6 +1197,11 @@ export default function Timeline(props: TimelineProps) {
           onChangeRangeEnd={onChangeRangeEnd}
           drillTitle={drillTitle}
           onClickDrillTitle={onClickDrillTitle}
+          playbackBPM={playbackBPM}
+          onSetPlaybackBPM={onSetPlaybackBPM}
+          onLoadMusic={onLoadMusic}
+          isMusicLoaded={isMusicLoaded}
+          musicFileName={musicFileName}
         />
       </div>
     </div>

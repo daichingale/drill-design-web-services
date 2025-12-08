@@ -17,49 +17,8 @@ function MenuBarInner() {
   // 現在のURLからドリルIDを取得
   const drillId = searchParams.get("id");
 
-  // 常に表示する「表示」メニュー
-  const viewMenuGroup = {
-    label: t("menu.view"),
-    icon: "👁️",
-    items: [
-      {
-        label: t("menu.view.commandPalette"),
-        icon: "🔍",
-        shortcut: "Ctrl+K",
-        action: () => {
-          if (openCommandPalette) {
-            openCommandPalette();
-          }
-        },
-      },
-      { divider: true },
-      {
-        label: t("menu.view.drillEditor"),
-        icon: "🎯",
-        action: () => {
-          if (drillId) {
-            window.location.href = `/drill?id=${drillId}`;
-          } else {
-            window.location.href = "/drill";
-          }
-        },
-      },
-      {
-        label: t("menu.view.settings"),
-        icon: "⚙️",
-        action: () => {
-          if (drillId) {
-            window.location.href = `/settings?id=${drillId}`;
-          } else {
-            window.location.href = "/settings";
-          }
-        },
-      },
-    ],
-  };
-
-  // ページ固有のメニューと「表示」メニューを結合
-  const allMenuGroups = [...menuGroups, viewMenuGroup];
+  // ページ固有のメニューをそのまま使用（「表示」メニューは各ページで定義）
+  const allMenuGroups = menuGroups;
 
   return <HeaderMenu groups={allMenuGroups} />;
 }
