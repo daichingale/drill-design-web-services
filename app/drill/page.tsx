@@ -1557,7 +1557,6 @@ export default function DrillPage() {
   // ヘッダーメニュー用のグループ
   // 共有メニューの状態管理
   const [shareMenuOpen, setShareMenuOpen] = useState<string | null>(null);
-  const [optionsMenuOpen, setOptionsMenuOpen] = useState<string | null>(null);
 
   const menuGroups = [
     {
@@ -1722,12 +1721,14 @@ export default function DrillPage() {
         {
           label: "ベータ機能",
           icon: "🧪",
-          action: () => setOptionsMenuOpen(optionsMenuOpen === "beta" ? null : "beta"),
-        },
-        {
-          label: "実験的機能",
-          icon: "🔬",
-          action: () => setOptionsMenuOpen(optionsMenuOpen === "experimental" ? null : "experimental"),
+          action: () => {
+            const drillId = pageState.metadata.drillDbId;
+            if (drillId) {
+              window.location.href = `/drill/beta?id=${drillId}`;
+            } else {
+              window.location.href = "/drill/beta";
+            }
+          },
         },
       ],
     },

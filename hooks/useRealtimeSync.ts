@@ -82,26 +82,38 @@ export function useRealtimeSync({
 
       eventSource.onerror = (error) => {
         // EventSourceのエラーは通常、エラーオブジェクトを提供しない
+        // eventSourceRef.currentを使用して最新の状態を取得
+        const currentEventSource = eventSourceRef.current || eventSource;
+        if (!currentEventSource) {
+          console.error("[RealtimeSync] Connection error: EventSource is null");
+          return;
+        }
+
         const errorInfo = {
-          readyState: eventSource.readyState,
-          readyStateText: eventSource.readyState === EventSource.CONNECTING ? 'CONNECTING' 
-            : eventSource.readyState === EventSource.OPEN ? 'OPEN' 
-            : eventSource.readyState === EventSource.CLOSED ? 'CLOSED' 
+          readyState: currentEventSource.readyState,
+          readyStateText: currentEventSource.readyState === EventSource.CONNECTING ? 'CONNECTING' 
+            : currentEventSource.readyState === EventSource.OPEN ? 'OPEN' 
+            : currentEventSource.readyState === EventSource.CLOSED ? 'CLOSED' 
             : 'UNKNOWN',
-          url: eventSource.url,
+          url: currentEventSource.url,
           drillId,
           userId: session?.user?.id,
           reconnectAttempt: reconnectAttemptsRef.current,
+          error: error ? {
+            type: error?.constructor?.name,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          } : null,
         };
         
         // readyStateが2（CLOSED）の場合は接続が閉じられたことを意味する
-        if (eventSource.readyState === EventSource.CLOSED) {
-          console.warn("[RealtimeSync] Connection closed:", errorInfo);
+        if (currentEventSource.readyState === EventSource.CLOSED) {
+          console.warn("[RealtimeSync] Connection closed:", JSON.stringify(errorInfo, null, 2));
         } else {
-          console.error("[RealtimeSync] Connection error:", errorInfo);
+          console.error("[RealtimeSync] Connection error:", JSON.stringify(errorInfo, null, 2));
         }
         
-        eventSource.close();
+        currentEventSource.close();
 
         // 再接続を試みる（readyStateがCLOSEDでない場合、または最大試行回数に達していない場合）
         if (reconnectAttemptsRef.current < maxReconnectAttempts) {
@@ -114,12 +126,12 @@ export function useRealtimeSync({
         } else {
           console.warn(
             "[RealtimeSync] Max reconnect attempts reached. Stopping reconnection attempts.",
-            {
+            JSON.stringify({
               drillId,
-              url: eventSource.url,
+              url: currentEventSource.url,
               readyState: errorInfo.readyStateText,
               message: "リアルタイム同期機能が使用できません。単独での編集は引き続き可能です。",
-            }
+            }, null, 2)
           );
         }
       };

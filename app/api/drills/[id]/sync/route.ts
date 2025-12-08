@@ -27,17 +27,31 @@ export async function GET(
     });
 
     if (!drill) {
+      console.error("[API] Drill not found for sync:", { drillId, userId: user.id });
       return new Response("Drill not found", { status: 404 });
     }
 
     const isOwner = drill.userId === user.id;
-    const isCollaborator = drill.collaborators.some(
+    const isCollaborator = drill.collaborators?.some(
       (c) => c.userId === user.id
-    );
+    ) || false;
 
     if (!isOwner && !isCollaborator) {
+      console.error("[API] Unauthorized sync access:", { 
+        drillId, 
+        userId: user.id, 
+        drillOwnerId: drill.userId,
+        collaborators: drill.collaborators?.map(c => c.userId) || [],
+      });
       return new Response("Unauthorized", { status: 403 });
     }
+
+    console.log("[API] SSE connection established:", {
+      drillId,
+      userId: user.id,
+      isOwner,
+      isCollaborator,
+    });
 
     // SSEストリームを作成
     const stream = new ReadableStream({
